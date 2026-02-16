@@ -57,6 +57,7 @@
           <li><strong>NDVI:</strong> Vegetation density</li>
           <li><strong>NDWI:</strong> Water presence</li>
           <li><strong>UHI:</strong> Heat risk prediction</li>
+          <li><strong>DTM:</strong> Digital Terrain Model</li>
         </ul>
       </div>
     </div>

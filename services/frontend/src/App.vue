@@ -68,6 +68,18 @@ const layers = reactive([
     }
   },
   {
+    id: 'dtm',
+    name: 'DTM',
+    description: 'Digital Terrain Model',
+    wmsLayer: 'uhi:dtm',
+    visible: false,
+    opacity: 0.7,
+    legend: {
+      min: { value: 0, color: '#000000', label: 'Altitude 0' },
+      max: { value: 129, color: '#ffffff', label: 'Altitude Max' }
+    }
+  },
+  {
     id: 'uhi_prediction',
     name: 'UHI Heat Risk',
     description: 'Heat island prediction (0-1)',

@@ -48,11 +48,14 @@ services:
       - ORION_URL=http://orion:1026
       - DATA_RAW_PATH=/data/raw
       - DATA_PROCESSED_PATH=/data/processed
+      - GEOSERVER_CONFIG_PATH=/opt/geoserver_data/workspaces/uhi
       - RGB_URL=${RGB_URL}
       - NIR_URL=${NIR_URL}
+      - DTM_URL=${DTM_URL}
     volumes:
       - ./data/raw:/data/raw
       - ./data/processed:/data/processed
+      - ./config/geoserver:/opt/geoserver_data/workspaces/uhi 
     depends_on:
       orion:
         condition: service_healthy

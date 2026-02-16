@@ -77,7 +77,51 @@ def translate_path(container_path: str) -> str:
     logger.warning(f"No path mapping found for {container_path}, using as-is")
     return container_path
 
+# ===================================================================
+# Style definitions
+# ===================================================================
 
+STYLES = {
+    "dtm": """<?xml version="1.0" encoding="UTF-8"?>
+<StyledLayerDescriptor version="1.0.0" 
+    xmlns="http://www.opengis.net/sld" 
+    xmlns:ogc="http://www.opengis.net/ogc"
+    xmlns:xlink="http://www.w3.org/1999/xlink">
+  <NamedLayer>
+    <Name>dtm</Name>
+    <UserStyle>
+      <Name>dtm_style</Name>
+      <Title>Digital Terrain Model - Brussels</Title>
+      <FeatureTypeStyle>
+        <Rule>
+          <RasterSymbolizer>
+                <ColorMap type="ramp">
+                <!-- 0 = NoData transparent -->
+                <ColorMapEntry color="#000000" quantity="0" opacity="0" label="NoData"/>
+                
+                <!-- Palier très fin pour plus de contraste -->
+                <ColorMapEntry color="#1a1a1a" quantity="1" opacity="1"/>
+                <ColorMapEntry color="#2b2b2b" quantity="10" opacity="1"/>
+                <ColorMapEntry color="#3c3c3c" quantity="20" opacity="1"/>
+                <ColorMapEntry color="#4d4d4d" quantity="30" opacity="1"/>
+                <ColorMapEntry color="#5e5e5e" quantity="50" opacity="1"/>
+                <ColorMapEntry color="#6f6f6f" quantity="70" opacity="1"/>
+                <ColorMapEntry color="#808080" quantity="90" opacity="1"/>
+                <ColorMapEntry color="#919191" quantity="110" opacity="1"/>
+                <ColorMapEntry color="#a2a2a2" quantity="130" opacity="1"/>
+                <ColorMapEntry color="#b3b3b3" quantity="150" opacity="1"/>
+                <ColorMapEntry color="#c4c4c4" quantity="170" opacity="1"/>
+                <ColorMapEntry color="#d5d5d5" quantity="190" opacity="1"/>
+                <ColorMapEntry color="#e6e6e6" quantity="220" opacity="1"/>
+                <ColorMapEntry color="#ffffff" quantity="254" opacity="1"/>
+            </ColorMap>
+          </RasterSymbolizer>
+        </Rule>
+      </FeatureTypeStyle>
+    </UserStyle>
+  </NamedLayer>
+</StyledLayerDescriptor>""",
+}
 # ===================================================================
 # GeoServer REST client
 # ===================================================================
@@ -149,6 +193,60 @@ class GeoServerClient:
                     f"Failed to create workspace: {r.status_code} {r.text}"
                 )
 
+
+    # -- styles -----------------------------------------------------------
+
+    def ensure_style(self, style_name: str, sld_content: str) -> bool:
+        ws = self.workspace
+        style_url = f"{self.base_url}/rest/workspaces/{ws}/styles/{style_name}"
+
+        with self._client() as c:
+            r = c.get(style_url)
+            if r.status_code == 200:
+                # Style existe → essayer update
+                r = c.put(
+                    style_url,
+                    content=sld_content,
+                    headers={"Content-Type": "application/vnd.ogc.sld+xml"},
+                )
+                if r.status_code in (200, 201):
+                    logger.info(f"Updated style '{ws}:{style_name}'")
+                    return True
+                elif r.status_code == 403:
+                    logger.warning(f"Cannot update style '{style_name}' (403), deleting and recreating")
+                    # Supprime puis recrée
+                    c.delete(style_url)
+                    r = c.post(
+                        f"{self.base_url}/rest/workspaces/{ws}/styles",
+                        content=sld_content,
+                        headers={"Content-Type": "application/vnd.ogc.sld+xml"},
+                        params={"name": style_name},
+                    )
+                    if r.status_code == 201:
+                        logger.info(f"Re-created style '{ws}:{style_name}'")
+                        return True
+                    else:
+                        logger.error(f"Failed to recreate style '{style_name}': {r.status_code} {r.text}")
+                        return False
+                else:
+                    logger.error(f"Failed to update style '{style_name}': {r.status_code} {r.text}")
+                    return False
+            else:
+                # Style n'existe pas → créer
+                r = c.post(
+                    f"{self.base_url}/rest/workspaces/{ws}/styles",
+                    content=sld_content,
+                    headers={"Content-Type": "application/vnd.ogc.sld+xml"},
+                    params={"name": style_name},
+                )
+                if r.status_code == 201:
+                    logger.info(f"Created style '{ws}:{style_name}'")
+                    return True
+                else:
+                    logger.error(f"Failed to create style '{style_name}': {r.status_code} {r.text}")
+                    return False
+
+
     # -- publish ----------------------------------------------------------
 
     def publish_layer(
@@ -157,9 +255,10 @@ class GeoServerClient:
         coverage_name: str,
         title: str,
         file_path: str,
+        style_name: Optional[str] = None,
     ) -> bool:
         """
-        Idempotently create a GeoTIFF coverage-store + coverage.
+        Idempotently create a GeoTIFF coverage-store + coverage+ apply style.
 
         Returns True on success.
         """
@@ -208,40 +307,59 @@ class GeoServerClient:
                 if r.status_code in (200, 201):
                     logger.info(f"Updated coverage store '{store_name}'")
 
-            # 2) Coverage — create if missing
+           # 2) Coverage — create if missing
             cov_url = (
                 f"{self.base_url}/rest/workspaces/{ws}"
                 f"/coveragestores/{store_name}/coverages/{coverage_name}"
             )
             r = c.get(cov_url)
-            if r.status_code == 200:
-                logger.info(
-                    f"Coverage '{ws}:{coverage_name}' already published"
+            
+            if r.status_code != 200:
+                cov_xml = (
+                    f"<coverage>"
+                    f"  <name>{coverage_name}</name>"
+                    f"  <title>{safe_title}</title>"
+                    f"  <enabled>true</enabled>"
+                    f"</coverage>"
                 )
-                return True
-
-            cov_xml = (
-                f"<coverage>"
-                f"  <name>{coverage_name}</name>"
-                f"  <title>{safe_title}</title>"
-                f"  <enabled>true</enabled>"
-                f"</coverage>"
-            )
-            r = c.post(
-                f"{self.base_url}/rest/workspaces/{ws}"
-                f"/coveragestores/{store_name}/coverages",
-                content=cov_xml,
-                headers={"Content-Type": "application/xml"},
-            )
-            if r.status_code == 201:
+                r = c.post(
+                    f"{self.base_url}/rest/workspaces/{ws}"
+                    f"/coveragestores/{store_name}/coverages",
+                    content=cov_xml,
+                    headers={"Content-Type": "application/xml"},
+                )
+                if r.status_code != 201:
+                    logger.error(
+                        f"Failed to publish coverage '{coverage_name}': "
+                        f"{r.status_code} {r.text}"
+                    )
+                    return False
                 logger.info(f"Published coverage '{ws}:{coverage_name}'")
-                return True
             else:
-                logger.error(
-                    f"Failed to publish coverage '{coverage_name}': "
-                    f"{r.status_code} {r.text}"
+                logger.info(f"Coverage '{ws}:{coverage_name}' already exists")
+
+            # 3) Apply style if specified
+            if style_name:
+                layer_url = f"{self.base_url}/rest/layers/{ws}:{coverage_name}"
+                layer_xml = (
+                    f"<layer>"
+                    f"  <defaultStyle><name>{style_name}</name><workspace>{ws}</workspace></defaultStyle>"
+                    f"</layer>"
                 )
-                return False
+                r = c.put(
+                    layer_url,
+                    content=layer_xml,
+                    headers={"Content-Type": "application/xml"},
+                )
+                if r.status_code in (200, 201):
+                    logger.info(f"Applied style '{ws}:{style_name}' to layer '{coverage_name}'")
+                else:
+                    logger.warning(
+                        f"Could not apply style to layer '{coverage_name}': "
+                        f"{r.status_code} {r.text}"
+                    )
+
+            return True
 
 
 # Singleton
@@ -280,9 +398,11 @@ def derive_layer_info(entity: dict) -> Optional[dict]:
         layer_type = entity.get("layerType", {}).get("value", "unknown")
         name = layer_type.lower()
         title = entity.get("name", {}).get("value", name)
+        style = "dtm_style" if name == "dtm" else None
     elif entity_type == "UHIHeatMap":
         name = "uhi_prediction"
         title = entity.get("name", {}).get("value", "UHI Heat Risk Prediction")
+        style = None
     else:
         # Try to derive from geoserverLayer property
         gs_layer = entity.get("geoserverLayer", {}).get("value", "")
@@ -291,6 +411,7 @@ def derive_layer_info(entity: dict) -> Optional[dict]:
         else:
             name = gs_layer or entity.get("id", "unknown").split(":")[-1]
         title = entity.get("name", {}).get("value", name)
+        style = None
 
     geoserver_path = translate_path(file_path)
 
@@ -299,6 +420,7 @@ def derive_layer_info(entity: dict) -> Optional[dict]:
         "store_name": f"store_{name}",
         "title": title,
         "geoserver_path": geoserver_path,
+        "style_name": style,
     }
 
 
@@ -313,11 +435,17 @@ def sync_entity(entity: dict) -> bool:
         f"{GEOSERVER_WORKSPACE}:{info['name']} "
         f"(file: {info['geoserver_path']})"
     )
+
+    # Ensure style exists in GeoServer if applicable
+    if info['style_name'] and info['name'] in STYLES:
+        geoserver.ensure_style(info['style_name'], STYLES[info['name']])
+
     return geoserver.publish_layer(
         store_name=info["store_name"],
         coverage_name=info["name"],
         title=info["title"],
         file_path=info["geoserver_path"],
+        style_name=info['style_name'],
     )
 
 

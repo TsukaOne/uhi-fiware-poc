@@ -8,6 +8,7 @@ data/processed/
 # GeoServer runtime config
 # ========================
 config/geoserver/
+config/styles/
 
 # ========================
 # Environment secrets

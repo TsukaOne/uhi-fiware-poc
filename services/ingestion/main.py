@@ -17,12 +17,24 @@ from pydantic import BaseModel
 
 from processors.ndvi import calculate_ndvi
 from processors.ndwi import calculate_ndwi
+from processors.dtm import process_dtm
 from processors.cog import build_overviews
 from fiware.client import OrionClient, GeoSpatialLayer
+from processors.get_dtm import download_wcs_raster
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
+"""
+# For testing locally
+from dotenv import load_dotenv
+BASE_DIR = Path(__file__).resolve().parent.parent.parent
+env_path = BASE_DIR / ".env"
+load_dotenv(dotenv_path=env_path)
+#DURING TESTING, REVERT TO THIS:
+DATA_RAW_PATH = Path(BASE_DIR / os.getenv("DATA_RAW_PATH", "/data/raw"))
+DATA_PROCESSED_PATH = Path(BASE_DIR / os.getenv("DATA_PROCESSED_PATH", "/data/processed"))"""
+
 
 # Environment variables
 ORION_URL = os.getenv("ORION_URL", "http://orion:1026")
@@ -30,6 +42,7 @@ DATA_RAW_PATH = Path(os.getenv("DATA_RAW_PATH", "/data/raw"))
 DATA_PROCESSED_PATH = Path(os.getenv("DATA_PROCESSED_PATH", "/data/processed"))
 RGB_URL = os.getenv("RGB_URL", "")
 NIR_URL = os.getenv("NIR_URL", "")
+DTM_URL = os.getenv("DTM_URL", "")
 
 # Ensure directories exist
 DATA_RAW_PATH.mkdir(parents=True, exist_ok=True)
@@ -62,6 +75,7 @@ class IngestRequest(BaseModel):
     """Request model for orthophoto ingestion."""
     rgb_url: Optional[str] = None
     nir_url: Optional[str] = None
+    dtm_url: Optional[str] = None
 
 
 class IngestResponse(BaseModel):
@@ -129,7 +143,7 @@ async def ingest_orthophotos(
     Download and process orthophotos from UrbIS.
     
     This endpoint triggers the full ingestion pipeline:
-    1. Download RGB and NIR orthophotos
+    1. Download RGB, NIR orthophotos + DTM 
     2. Extract GeoTIFF files
     3. Calculate NDVI and NDWI indices
     4. Register all layers in Orion-LD
@@ -144,6 +158,15 @@ async def ingest_orthophotos(
     
     rgb_url = (request.rgb_url if request else None) or RGB_URL
     nir_url = (request.nir_url if request else None) or NIR_URL
+    dtm_url = (request.dtm_url if request else None) or DTM_URL
+    
+    logger.info(f"Starting ingestion with URLs: RGB={rgb_url}, NIR={nir_url}, DTM={dtm_url}")
+    
+    if not dtm_url:
+        raise HTTPException(
+            status_code=400,
+            detail="DTM URL is required"
+        )
     
     if not rgb_url or not nir_url:
         raise HTTPException(
@@ -155,7 +178,8 @@ async def ingest_orthophotos(
     background_tasks.add_task(
         run_ingestion_pipeline,
         rgb_url,
-        nir_url
+        nir_url,
+        dtm_url
     )
     
     return IngestResponse(
@@ -164,8 +188,58 @@ async def ingest_orthophotos(
         layers=[]
     )
 
+async def download_dtm_wcs(dtm_url: str, output_dir: Path) -> Path:
+    """
+    Download DTM from WCS service.
+    
+    Args:
+        dtm_url: URL of the WCS service (or can be used as a marker to use WCS)
+        output_dir: Directory where the DTM will be saved
+        
+    Returns:
+        Path to the downloaded DTM file
+    """
+    output_path = output_dir / "dtm_brussels.tif"
+    
+    # Check if already downloaded
+    if output_path.exists():
+        logger.info(f"DTM already exists at {output_path}, skipping download")
+        return output_path
+    
+    logger.info("Downloading DTM from WCS service...")
+    
+    # Run the WCS download in a thread to not block the async loop
+    await asyncio.to_thread(
+        download_wcs_raster,
+        wcs_url=dtm_url,
+        coverage="urbisgrid:Altitude2019",# WCS Layer
+        bbox=[140000, 160000, 159000, 179000],  # BBOX for Brussels extent in EPSG:31370 (it includes no data value too)
+        output_path=str(output_path),
+        resolution=1,# 1m
+        tile_size=10000,# 4 chunk for 1 big raster
+        max_workers=12,# Number max of thread
+        cleanup_tiles=True  # Clean up temporary tiles after merge
+    )
+    
+    return output_path
 
-async def run_ingestion_pipeline(rgb_url: str, nir_url: str):
+async def run_if_missing(output_path: Path, func, *args):
+    """
+    Check if the file exist in the path and run the script for preprocessing
+
+    Args:
+        output_path: Path of the file
+        func: function to run if path is missing
+        *args: additionial args 
+    """
+    if output_path.exists():
+        logger.info(f"Skipping (already exists): {output_path.name}")
+        return
+    await asyncio.to_thread(func, *args)
+    logger.info(f"Created: {output_path.name}")
+
+
+async def run_ingestion_pipeline(rgb_url: str, nir_url: str, dtm_url: str):
     """Run the full ingestion pipeline."""
     global ingestion_status
     
@@ -176,7 +250,7 @@ async def run_ingestion_pipeline(rgb_url: str, nir_url: str):
     }
     
     try:
-        # Step 1: Download orthophotos
+        # Step 1: Download orthophotos and DTM (if not already downloaded)
         ingestion_status["progress"] = "Downloading RGB orthophoto..."
         logger.info(f"Downloading RGB from: {rgb_url}")
         rgb_path = await download_and_extract(rgb_url, "rgb")
@@ -184,17 +258,26 @@ async def run_ingestion_pipeline(rgb_url: str, nir_url: str):
         ingestion_status["progress"] = "Downloading NIR orthophoto..."
         logger.info(f"Downloading NIR from: {nir_url}")
         nir_path = await download_and_extract(nir_url, "nir")
+
+        ingestion_status["progress"] = "Downloading DTM from WCS (tiled download)..."
+        logger.info(f"Downloading DTM via WCS")
+        dtm_path = await download_dtm_wcs(dtm_url, DATA_RAW_PATH)
         
         if not rgb_path or not nir_path:
             raise Exception("Failed to download orthophotos")
+        
+        if not dtm_path:
+            raise Exception("Failed to download DTM")
         
         # Use raw files directly (no copying to save disk space and memory)
         # The raw files are 6GB+ each, so we process directly from them
         rgb_processed = rgb_path  # Keep reference to raw file
         nir_processed = nir_path  # Keep reference to raw file
+        dtm_processed = dtm_path  # Keep reference to raw file
         
         logger.info(f"Using RGB directly from: {rgb_processed}")
         logger.info(f"Using NIR directly from: {nir_processed}")
+        logger.info(f"Using DTM directly from: {dtm_processed}")
         
         # Step 1b: Build overviews for RGB and NIR (critical for WMS performance)
         # Without overviews, GeoServer reads the full 6GB file at every zoom level
@@ -204,28 +287,45 @@ async def run_ingestion_pipeline(rgb_url: str, nir_url: str):
         ingestion_status["progress"] = "Building NIR overviews for fast WMS serving..."
         await asyncio.to_thread(build_overviews, str(nir_processed))
         
+        ingestion_status["progress"] = "Building DTM overviews for fast WMS serving..."
+        await asyncio.to_thread(build_overviews, str(dtm_processed))
+        
         # Step 2: Calculate NDVI (using windowed processing for large files)
         ingestion_status["progress"] = "Calculating NDVI (windowed processing)..."
         ndvi_path = DATA_PROCESSED_PATH / "ndvi_brussels_2024.tif"
-        await asyncio.to_thread(
+        await run_if_missing(
+            ndvi_path,
             calculate_ndvi,
             str(rgb_processed),
             str(nir_processed),
             str(ndvi_path)
         )
+
         logger.info(f"NDVI calculated: {ndvi_path}")
         
         # Step 3: Calculate NDWI (using windowed processing for large files)
         ingestion_status["progress"] = "Calculating NDWI (windowed processing)..."
         ndwi_path = DATA_PROCESSED_PATH / "ndwi_brussels_2024.tif"
-        await asyncio.to_thread(
+        await run_if_missing(
+            ndwi_path,
             calculate_ndwi,
             str(rgb_processed),
             str(nir_processed),
             str(ndwi_path)
         )
         logger.info(f"NDWI calculated: {ndwi_path}")
-        
+
+        # Step 4: Process DTM (convert to COG with overviews)
+        ingestion_status["progress"]= "Processing DTM (convert to COG with overviews)..."
+        dtm_cog_path = DATA_PROCESSED_PATH / "dtm_brussels_2021.tif"
+        await run_if_missing(
+            dtm_cog_path,
+            process_dtm,
+            str(dtm_processed),
+            str(dtm_cog_path)
+        )
+        logger.info(f"DTM processed: {dtm_cog_path}")
+
         # Step 5: Register layers in Orion
         ingestion_status["progress"] = "Registering layers in Orion..."
         
@@ -258,6 +358,13 @@ async def run_ingestion_pipeline(rgb_url: str, nir_url: str):
                 file_path=str(ndwi_path),
                 resolution=40
             ),
+            GeoSpatialLayer(
+                layer_type="DTM",
+                name="DTM Brussels 2021",
+                spectral_range="elevation",
+                file_path=str(dtm_cog_path),
+                resolution=100
+            )
         ]
         
         for layer in layers_to_register:
