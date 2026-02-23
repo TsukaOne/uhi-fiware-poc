@@ -18,6 +18,7 @@ from pydantic import BaseModel
 from processors.ndvi import calculate_ndvi
 from processors.ndwi import calculate_ndwi
 from processors.dtm import process_dtm
+from processors.building_height import process_building_heights
 from processors.cog import build_overviews
 from fiware.client import OrionClient, GeoSpatialLayer
 from processors.get_dtm import download_wcs_raster
@@ -43,6 +44,7 @@ DATA_PROCESSED_PATH = Path(os.getenv("DATA_PROCESSED_PATH", "/data/processed"))
 RGB_URL = os.getenv("RGB_URL", "")
 NIR_URL = os.getenv("NIR_URL", "")
 DTM_URL = os.getenv("DTM_URL", "")
+BUILDINGS_AND_ENGINEERING_WORKS_URL = os.getenv("BUILDINGS_AND_ENGINEERING_WORKS_URL", "")
 
 # Ensure directories exist
 DATA_RAW_PATH.mkdir(parents=True, exist_ok=True)
@@ -76,6 +78,7 @@ class IngestRequest(BaseModel):
     rgb_url: Optional[str] = None
     nir_url: Optional[str] = None
     dtm_url: Optional[str] = None
+    buildings_and_engineering_works_url: Optional[str] = None
 
 
 class IngestResponse(BaseModel):
@@ -159,13 +162,20 @@ async def ingest_orthophotos(
     rgb_url = (request.rgb_url if request else None) or RGB_URL
     nir_url = (request.nir_url if request else None) or NIR_URL
     dtm_url = (request.dtm_url if request else None) or DTM_URL
+    building_and_engineering_works_url = (request.buildings_and_engineering_works_url if request else None) or BUILDINGS_AND_ENGINEERING_WORKS_URL
     
-    logger.info(f"Starting ingestion with URLs: RGB={rgb_url}, NIR={nir_url}, DTM={dtm_url}")
+    logger.info(f"Starting ingestion with URLs: RGB={rgb_url}, NIR={nir_url}, DTM={dtm_url}, Buildings and Engineering Works={building_and_engineering_works_url}")
     
     if not dtm_url:
         raise HTTPException(
             status_code=400,
             detail="DTM URL is required"
+        )
+    
+    if not building_and_engineering_works_url:
+        raise HTTPException(
+            status_code=400,
+            detail="Buildings and Engineering Works URL is required"
         )
     
     if not rgb_url or not nir_url:
@@ -179,7 +189,8 @@ async def ingest_orthophotos(
         run_ingestion_pipeline,
         rgb_url,
         nir_url,
-        dtm_url
+        dtm_url,
+        building_and_engineering_works_url
     )
     
     return IngestResponse(
@@ -239,7 +250,7 @@ async def run_if_missing(output_path: Path, func, *args):
     logger.info(f"Created: {output_path.name}")
 
 
-async def run_ingestion_pipeline(rgb_url: str, nir_url: str, dtm_url: str):
+async def run_ingestion_pipeline(rgb_url: str, nir_url: str, dtm_url: str, building_and_engineering_works_url: str):
     """Run the full ingestion pipeline."""
     global ingestion_status
     
@@ -259,6 +270,10 @@ async def run_ingestion_pipeline(rgb_url: str, nir_url: str, dtm_url: str):
         logger.info(f"Downloading NIR from: {nir_url}")
         nir_path = await download_and_extract(nir_url, "nir")
 
+        ingestion_status["progress"] = "Downloading Buildings and engineering data from GeoPackage..."
+        logger.info(f"Downloading Buildings and engineering data from GeoPackage")
+        building_and_engineering_works_path = await download_and_extract_zip_gpkg(building_and_engineering_works_url, "buildings_and_engineering_works","UrbISBuildings3D_04000")
+
         ingestion_status["progress"] = "Downloading DTM from WCS (tiled download)..."
         logger.info(f"Downloading DTM via WCS")
         dtm_path = await download_dtm_wcs(dtm_url, DATA_RAW_PATH)
@@ -269,15 +284,22 @@ async def run_ingestion_pipeline(rgb_url: str, nir_url: str, dtm_url: str):
         if not dtm_path:
             raise Exception("Failed to download DTM")
         
+        if not building_and_engineering_works_path:
+            raise Exception("Failed to download buildings and engineering data")
+        
+
+        
         # Use raw files directly (no copying to save disk space and memory)
         # The raw files are 6GB+ each, so we process directly from them
         rgb_processed = rgb_path  # Keep reference to raw file
         nir_processed = nir_path  # Keep reference to raw file
         dtm_processed = dtm_path  # Keep reference to raw file
+        building_and_engineering_works_processed = building_and_engineering_works_path  # Keep reference to raw file
         
         logger.info(f"Using RGB directly from: {rgb_processed}")
         logger.info(f"Using NIR directly from: {nir_processed}")
         logger.info(f"Using DTM directly from: {dtm_processed}")
+        logger.info(f"Using Buildings and Engineering Works directly from: {building_and_engineering_works_processed}")
         
         # Step 1b: Build overviews for RGB and NIR (critical for WMS performance)
         # Without overviews, GeoServer reads the full 6GB file at every zoom level
@@ -326,7 +348,19 @@ async def run_ingestion_pipeline(rgb_url: str, nir_url: str, dtm_url: str):
         )
         logger.info(f"DTM processed: {dtm_cog_path}")
 
-        # Step 5: Register layers in Orion
+        # Step 5: Calculate Relative building height using DTM and buildings data gpkg
+        ingestion_status["progress"] = "Calculating Relative building height using DTM and buildings data gpkg..."
+        building_height_path = DATA_PROCESSED_PATH / "building_height_brussels.tif"
+        await run_if_missing(
+            building_height_path,
+            process_building_heights,
+            str(building_and_engineering_works_processed),
+            str(dtm_path),
+            str(building_height_path),
+            "BuildingFaces"
+        )
+
+        # Step 6: Register layers in Orion
         ingestion_status["progress"] = "Registering layers in Orion..."
         
         layers_to_register = [
@@ -427,6 +461,64 @@ async def download_and_extract(url: str, name: str) -> Optional[Path]:
         logger.error(f"No TIFF files found in {extract_dir}")
         return None
         
+    except Exception as e:
+        logger.error(f"Failed to download/extract {url}: {e}")
+        return None
+async def download_and_extract_zip_gpkg(url: str,name: str,gpkg_name_contains: str) -> Optional[Path]:
+    """
+    Download a ZIP file and extract a specific GPKG file matching gpkg_name_contains.
+    """
+    import httpx
+    import zipfile
+    import shutil
+
+    zip_path = DATA_RAW_PATH / f"{name}.zip"
+    extract_dir = DATA_RAW_PATH / name
+
+    try:
+        if extract_dir.exists():
+            existing_gpkg = list(
+                extract_dir.rglob(f"*{gpkg_name_contains}*.gpkg")
+            )
+            if existing_gpkg:
+                logger.info(
+                    f"Skipping download for {name}: found existing GPKG at {existing_gpkg[0]}"
+                )
+                return existing_gpkg[0]
+
+        async with httpx.AsyncClient(timeout=600.0) as client:
+            logger.info(f"Starting download: {url}")
+            async with client.stream("GET", url) as response:
+                response.raise_for_status()
+                with open(zip_path, "wb") as f:
+                    async for chunk in response.aiter_bytes(chunk_size=8192):
+                        f.write(chunk)
+
+        logger.info(f"Downloaded: {zip_path}")
+
+        extract_dir.mkdir(parents=True, exist_ok=True)
+
+        extracted_gpkg_path = None
+
+        with zipfile.ZipFile(zip_path, "r") as zip_ref:
+            for member in zip_ref.namelist():
+                if member.lower().endswith(".gpkg") and gpkg_name_contains.lower() in member.lower():
+                    
+                    target_path = extract_dir / Path(member).name
+                    
+                    with zip_ref.open(member) as source, open(target_path, "wb") as target:
+                        shutil.copyfileobj(source, target)
+
+                    extracted_gpkg_path = target_path
+                    logger.info(f"Extracted GPKG: {target_path}")
+                    break
+
+        if extracted_gpkg_path:
+            return extracted_gpkg_path
+
+        logger.error(f"No matching GPKG found in {zip_path}")
+        return None
+
     except Exception as e:
         logger.error(f"Failed to download/extract {url}: {e}")
         return None
