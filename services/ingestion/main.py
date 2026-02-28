@@ -359,7 +359,8 @@ async def run_ingestion_pipeline(rgb_url: str, nir_url: str, dtm_url: str, build
             str(building_height_path),
             "BuildingFaces"
         )
-
+        lst_path = DATA_PROCESSED_PATH / "lst.tif"
+        
         # Step 6: Register layers in Orion
         ingestion_status["progress"] = "Registering layers in Orion..."
         
@@ -398,6 +399,20 @@ async def run_ingestion_pipeline(rgb_url: str, nir_url: str, dtm_url: str, build
                 spectral_range="elevation",
                 file_path=str(dtm_cog_path),
                 resolution=100
+            ),
+            GeoSpatialLayer(
+                layer_type="BuildingHeight",
+                name="Building Height Brussels 2024",
+                spectral_range="elevation",
+                file_path=str(building_height_path),
+                resolution= 40
+            ),
+            GeoSpatialLayer(
+                layer_type="LST",
+                name="LST Brussels 2024",
+                spectral_range="temperature",
+                file_path=str(lst_path),
+                resolution= 40
             )
         ]
         

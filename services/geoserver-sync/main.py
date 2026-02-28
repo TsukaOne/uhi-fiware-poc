@@ -83,44 +83,213 @@ def translate_path(container_path: str) -> str:
 
 STYLES = {
     "dtm": """<?xml version="1.0" encoding="UTF-8"?>
-<StyledLayerDescriptor version="1.0.0" 
-    xmlns="http://www.opengis.net/sld" 
-    xmlns:ogc="http://www.opengis.net/ogc"
-    xmlns:xlink="http://www.w3.org/1999/xlink">
-  <NamedLayer>
-    <Name>dtm</Name>
-    <UserStyle>
-      <Name>dtm_style</Name>
-      <Title>Digital Terrain Model - Brussels</Title>
-      <FeatureTypeStyle>
-        <Rule>
-          <RasterSymbolizer>
-                <ColorMap type="ramp">
-                <!-- 0 = NoData transparent -->
-                <ColorMapEntry color="#000000" quantity="0" opacity="0" label="NoData"/>
-                
-                <!-- Palier très fin pour plus de contraste -->
-                <ColorMapEntry color="#1a1a1a" quantity="1" opacity="1"/>
-                <ColorMapEntry color="#2b2b2b" quantity="10" opacity="1"/>
-                <ColorMapEntry color="#3c3c3c" quantity="20" opacity="1"/>
-                <ColorMapEntry color="#4d4d4d" quantity="30" opacity="1"/>
-                <ColorMapEntry color="#5e5e5e" quantity="50" opacity="1"/>
-                <ColorMapEntry color="#6f6f6f" quantity="70" opacity="1"/>
-                <ColorMapEntry color="#808080" quantity="90" opacity="1"/>
-                <ColorMapEntry color="#919191" quantity="110" opacity="1"/>
-                <ColorMapEntry color="#a2a2a2" quantity="130" opacity="1"/>
-                <ColorMapEntry color="#b3b3b3" quantity="150" opacity="1"/>
-                <ColorMapEntry color="#c4c4c4" quantity="170" opacity="1"/>
-                <ColorMapEntry color="#d5d5d5" quantity="190" opacity="1"/>
-                <ColorMapEntry color="#e6e6e6" quantity="220" opacity="1"/>
-                <ColorMapEntry color="#ffffff" quantity="254" opacity="1"/>
-            </ColorMap>
-          </RasterSymbolizer>
-        </Rule>
-      </FeatureTypeStyle>
-    </UserStyle>
-  </NamedLayer>
-</StyledLayerDescriptor>""",
+    <StyledLayerDescriptor version="1.0.0" 
+        xmlns="http://www.opengis.net/sld" 
+        xmlns:ogc="http://www.opengis.net/ogc"
+        xmlns:xlink="http://www.w3.org/1999/xlink">
+        <NamedLayer>
+            <Name>dtm</Name>
+            <UserStyle>
+            <Name>dtm_style</Name>
+            <Title>Digital Terrain Model - Brussels</Title>
+            <FeatureTypeStyle>
+                <Rule>
+                <RasterSymbolizer>
+                    
+                    <ColorMap type="ramp">
+                        <!-- 0 = NoData transparent -->
+                        <ColorMapEntry color="#000000" quantity="0" opacity="0" label="NoData"/>
+                        
+                        <!-- Palier très fin pour plus de contraste -->
+                        <ColorMapEntry color="#1a1a1a" quantity="1" opacity="1"/>
+                        <ColorMapEntry color="#2b2b2b" quantity="10" opacity="1"/>
+                        <ColorMapEntry color="#3c3c3c" quantity="20" opacity="1"/>
+                        <ColorMapEntry color="#4d4d4d" quantity="30" opacity="1"/>
+                        <ColorMapEntry color="#5e5e5e" quantity="50" opacity="1"/>
+                        <ColorMapEntry color="#6f6f6f" quantity="70" opacity="1"/>
+                        <ColorMapEntry color="#808080" quantity="90" opacity="1"/>
+                        <ColorMapEntry color="#919191" quantity="110" opacity="1"/>
+                        <ColorMapEntry color="#a2a2a2" quantity="130" opacity="1"/>
+                        <ColorMapEntry color="#b3b3b3" quantity="150" opacity="1"/>
+                        <ColorMapEntry color="#c4c4c4" quantity="170" opacity="1"/>
+                        <ColorMapEntry color="#d5d5d5" quantity="190" opacity="1"/>
+                        <ColorMapEntry color="#e6e6e6" quantity="220" opacity="1"/>
+                        <ColorMapEntry color="#ffffff" quantity="254" opacity="1"/>
+                    </ColorMap>
+                </RasterSymbolizer>
+                </Rule>
+            </FeatureTypeStyle>
+            </UserStyle>
+        </NamedLayer>
+    </StyledLayerDescriptor>""",
+
+    "ndwi": """<?xml version="1.0" encoding="UTF-8"?>
+    <StyledLayerDescriptor version="1.0.0" 
+        xmlns="http://www.opengis.net/sld" 
+        xmlns:ogc="http://www.opengis.net/ogc"
+        xmlns:xlink="http://www.w3.org/1999/xlink">
+        <NamedLayer>
+            <Name>ndwi</Name>
+            <UserStyle>
+            <Name>ndwi_style</Name>
+            <Title>Normalized Difference Water Index - Brussels</Title>
+            <FeatureTypeStyle>
+                <Rule>
+                <RasterSymbolizer>
+                    
+                    
+                    <ColorMap>
+                        <ColorMapEntry color="#8c510a" quantity="0" opacity="1"/>
+                        <ColorMapEntry color="#bf812d" quantity="33" opacity="1"/>
+                        <ColorMapEntry color="#dfc27d" quantity="66" opacity="1"/>
+                        <ColorMapEntry color="#f6e8c3" quantity="90" opacity="1"/>
+                        <ColorMapEntry color="#ffffff" quantity="127" opacity="1"/>
+                        <ColorMapEntry color="#c7eae5" quantity="150" opacity="1"/>
+                        <ColorMapEntry color="#80cdc1" quantity="170" opacity="1"/>
+                        <ColorMapEntry color="#35978f" quantity="191" opacity="1"/>
+                        <ColorMapEntry color="#01665e" quantity="220" opacity="1"/>
+                        <ColorMapEntry color="#003c30" quantity="254" opacity="1"/>
+                    </ColorMap>
+                </RasterSymbolizer>
+                </Rule>
+            </FeatureTypeStyle>
+            </UserStyle>
+        </NamedLayer>
+    </StyledLayerDescriptor>""",
+
+    "ndvi": """<?xml version="1.0" encoding="UTF-8"?>
+    <StyledLayerDescriptor version="1.0.0" 
+        xmlns="http://www.opengis.net/sld" 
+        xmlns:ogc="http://www.opengis.net/ogc"
+        xmlns:xlink="http://www.w3.org/1999/xlink">
+        <NamedLayer>
+            <Name>ndvi</Name>
+            <UserStyle>
+            <Name>ndvi_style</Name>
+            <Title>Normalized Difference Vegetation Index - Brussels</Title>
+            <FeatureTypeStyle>
+                <Rule>
+                <RasterSymbolizer>
+                    <ColorMap>
+                            <ColorMapEntry color="#d7191c" quantity="0" opacity="1" label="No vegetation"/>
+                            <ColorMapEntry color="#d53b22" quantity="33" opacity="1"/>
+                            <ColorMapEntry color="#d35d28" quantity="66" opacity="1"/>
+                            <ColorMapEntry color="#d17f2e" quantity="99" opacity="1"/>
+                            <ColorMapEntry color="#ebc781" quantity="132" opacity="1"/>
+                            <ColorMapEntry color="#d2f79f" quantity="165" opacity="1"/>
+                            <ColorMapEntry color="#3ed537" quantity="198" opacity="1"/>
+                            <ColorMapEntry color="#2ab33d" quantity="229" opacity="1"/>
+                            <ColorMapEntry color="#1a9641" quantity="254" opacity="1" label="High vegetation"/>                    
+                    </ColorMap>
+                </RasterSymbolizer>
+                </Rule>
+            </FeatureTypeStyle>
+            </UserStyle>
+        </NamedLayer>
+    </StyledLayerDescriptor>""",
+
+    "rgb": """<?xml version="1.0" encoding="UTF-8"?>
+    <StyledLayerDescriptor version="1.0.0" 
+        xmlns="http://www.opengis.net/sld" 
+        xmlns:ogc="http://www.opengis.net/ogc"
+        xmlns:xlink="http://www.w3.org/1999/xlink">
+        <NamedLayer>
+            <Name>rgb</Name>
+            <UserStyle>
+            <Name>rgb_style</Name>
+            <Title>Red Green Blue - Brussels</Title>
+            <FeatureTypeStyle>
+                <Rule>
+               <RasterSymbolizer>
+
+                <ChannelSelection>
+                    <RedChannel>
+                    <SourceChannelName>1</SourceChannelName>
+                    </RedChannel>
+                    <GreenChannel>
+                    <SourceChannelName>2</SourceChannelName>
+                    </GreenChannel>
+                    <BlueChannel>
+                    <SourceChannelName>3</SourceChannelName>
+                    </BlueChannel>
+                </ChannelSelection>
+
+                </RasterSymbolizer>
+                </Rule>
+            </FeatureTypeStyle>
+            </UserStyle>
+        </NamedLayer>
+    </StyledLayerDescriptor>""",
+
+    "nir": """<?xml version="1.0" encoding="UTF-8"?>
+    <StyledLayerDescriptor version="1.0.0" 
+        xmlns="http://www.opengis.net/sld" 
+        xmlns:ogc="http://www.opengis.net/ogc"
+        xmlns:xlink="http://www.w3.org/1999/xlink">
+        <NamedLayer>
+            <Name>nir</Name>
+            <UserStyle>
+            <Name>nir_style</Name>
+            <Title>Near Infrared - Brussels</Title>
+            <FeatureTypeStyle>
+                <Rule>
+                <RasterSymbolizer>
+                    <ChannelSelection>
+                        <RedChannel>
+                        <SourceChannelName>1</SourceChannelName>
+                        </RedChannel>
+                        <GreenChannel>
+                        <SourceChannelName>2</SourceChannelName>
+                        </GreenChannel>
+                        <BlueChannel>
+                        <SourceChannelName>3</SourceChannelName>
+                        </BlueChannel>
+                    </ChannelSelection>
+
+                    </RasterSymbolizer>
+                </Rule>
+            </FeatureTypeStyle>
+            </UserStyle>
+        </NamedLayer>
+    </StyledLayerDescriptor>""",
+    
+    "uhi_prediction": """<?xml version="1.0" encoding="UTF-8"?>
+    <StyledLayerDescriptor version="1.0.0"
+        xmlns="http://www.opengis.net/sld"
+        xmlns:ogc="http://www.opengis.net/ogc"
+        xmlns:xlink="http://www.w3.org/1999/xlink">
+        <NamedLayer>
+            <Name>uhi_prediction</Name>
+            <UserStyle>
+                <Name>uhi_prediction_style</Name>
+                <Title>Urban Heat Island Prediction (RdYlBu)</Title>
+                <FeatureTypeStyle>
+                    <Rule>
+                        <RasterSymbolizer>
+                            <ColorMap type="ramp">
+
+                                <!-- Froid (Bleu) -->
+                                <ColorMapEntry color="#313695" quantity="0" opacity="1" label="Very Cold"/>
+                                <ColorMapEntry color="#4575b4" quantity="50" opacity="1"/>
+                                <ColorMapEntry color="#74add1" quantity="90" opacity="1"/>
+
+                                <!-- Transition -->
+                                <ColorMapEntry color="#abd9e9" quantity="110" opacity="1"/>
+                                <ColorMapEntry color="#ffffbf" quantity="127" opacity="1" label="Neutral"/>
+
+                                <!-- Chaud -->
+                                <ColorMapEntry color="#fdae61" quantity="160" opacity="1"/>
+                                <ColorMapEntry color="#f46d43" quantity="190" opacity="1"/>
+                                <ColorMapEntry color="#d73027" quantity="220" opacity="1"/>
+                                <ColorMapEntry color="#a50026" quantity="254" opacity="1" label="Very Hot"/>
+
+                            </ColorMap>
+                        </RasterSymbolizer>
+                    </Rule>
+                </FeatureTypeStyle>
+            </UserStyle>
+        </NamedLayer>
+    </StyledLayerDescriptor>"""
 }
 # ===================================================================
 # GeoServer REST client
@@ -202,49 +371,85 @@ class GeoServerClient:
 
         with self._client() as c:
             r = c.get(style_url)
-            if r.status_code == 200:
-                # Style existe → essayer update
+
+            # 500 = style corrompu côté GeoServer → supprimer et recréer
+            if r.status_code == 500:
+                logger.warning(
+                    f"Style '{style_name}' returned 500 — deleting and recreating"
+                )
+                del_r =c.delete(style_url, params={"purge": "true", "recurse": "true"})
+                if del_r.status_code not in (200, 404):
+                    # Toujours refusé — tenter un PUT direct avec le SLD quand même
+                    logger.warning(
+                        f"Could not delete corrupt style '{style_name}' "
+                        f"({del_r.status_code}) — attempting direct PUT"
+                    )
+                    r2 = c.put(
+                        style_url,
+                        content=sld_content.encode("utf-8"),
+                        headers={"Content-Type": "application/vnd.ogc.sld+xml"},
+                    )
+                    if r2.status_code in (200, 201):
+                        logger.info(f"Overwrote corrupt style '{ws}:{style_name}' via PUT")
+                        return True
+                    logger.error(f"Failed to overwrite style: {r2.status_code} {r2.text}")
+                    return False
+
+                r = type('R', (), {'status_code': 404})()  # forcer le chemin création
+
+            exists = r.status_code == 200
+
+            if exists:
+                # Style sain → PUT direct du SLD
                 r = c.put(
                     style_url,
-                    content=sld_content,
+                    content=sld_content.encode("utf-8"),
                     headers={"Content-Type": "application/vnd.ogc.sld+xml"},
                 )
                 if r.status_code in (200, 201):
                     logger.info(f"Updated style '{ws}:{style_name}'")
                     return True
-                elif r.status_code == 403:
-                    logger.warning(f"Cannot update style '{style_name}' (403), deleting and recreating")
-                    # Supprime puis recrée
-                    c.delete(style_url)
-                    r = c.post(
-                        f"{self.base_url}/rest/workspaces/{ws}/styles",
-                        content=sld_content,
-                        headers={"Content-Type": "application/vnd.ogc.sld+xml"},
-                        params={"name": style_name},
-                    )
-                    if r.status_code == 201:
-                        logger.info(f"Re-created style '{ws}:{style_name}'")
-                        return True
-                    else:
-                        logger.error(f"Failed to recreate style '{style_name}': {r.status_code} {r.text}")
-                        return False
-                else:
-                    logger.error(f"Failed to update style '{style_name}': {r.status_code} {r.text}")
-                    return False
-            else:
-                # Style n'existe pas → créer
-                r = c.post(
-                    f"{self.base_url}/rest/workspaces/{ws}/styles",
-                    content=sld_content,
-                    headers={"Content-Type": "application/vnd.ogc.sld+xml"},
-                    params={"name": style_name},
+                logger.error(
+                    f"Failed to update style '{style_name}': "
+                    f"{r.status_code} {r.text}"
                 )
-                if r.status_code == 201:
-                    logger.info(f"Created style '{ws}:{style_name}'")
-                    return True
-                else:
-                    logger.error(f"Failed to create style '{style_name}': {r.status_code} {r.text}")
-                    return False
+                return False
+
+            # Style absent → création en deux étapes (obligatoire pour workspace-scoped)
+            # Étape 1 : déclarer le nom du style
+            descriptor_xml = (
+                f"<style>"
+                f"  <name>{style_name}</name>"
+                f"  <filename>{style_name}.sld</filename>"
+                f"</style>"
+            )
+            r = c.post(
+                f"{self.base_url}/rest/workspaces/{ws}/styles",
+                content=descriptor_xml.encode("utf-8"),
+                headers={"Content-Type": "application/xml"},
+            )
+            if r.status_code not in (200, 201):
+                logger.error(
+                    f"Failed to declare style '{style_name}': "
+                    f"{r.status_code} {r.text}"
+                )
+                return False
+
+            # Étape 2 : pousser le contenu SLD
+            r = c.put(
+                style_url,
+                content=sld_content.encode("utf-8"),
+                headers={"Content-Type": "application/vnd.ogc.sld+xml"},
+            )
+            if r.status_code in (200, 201):
+                logger.info(f"Created style '{ws}:{style_name}'")
+                return True
+
+            logger.error(
+                f"Failed to upload SLD for '{style_name}': "
+                f"{r.status_code} {r.text}"
+            )
+            return False
 
 
     # -- publish ----------------------------------------------------------
@@ -338,26 +543,67 @@ class GeoServerClient:
             else:
                 logger.info(f"Coverage '{ws}:{coverage_name}' already exists")
 
-            # 3) Apply style if specified
-            if style_name:
-                layer_url = f"{self.base_url}/rest/layers/{ws}:{coverage_name}"
-                layer_xml = (
-                    f"<layer>"
-                    f"  <defaultStyle><name>{style_name}</name><workspace>{ws}</workspace></defaultStyle>"
-                    f"</layer>"
+            layer_url = f"{self.base_url}/rest/layers/{ws}:{coverage_name}"
+            r = c.get(layer_url)
+
+            # 3) Ensure Layer exists 
+            layer_url = f"{self.base_url}/rest/layers/{ws}:{coverage_name}"
+            r = c.get(layer_url)
+
+            if r.status_code != 200:
+                logger.warning(f"Layer '{ws}:{coverage_name}' missing — recreating via coverage")
+
+                # Delete coverage
+                del_cov_url = (
+                    f"{self.base_url}/rest/workspaces/{ws}"
+                    f"/coveragestores/{store_name}/coverages/{coverage_name}?recurse=true"
                 )
-                r = c.put(
-                    layer_url,
-                    content=layer_xml,
+
+                r = c.delete(del_cov_url)
+                if r.status_code not in (200, 202):
+                    logger.error(f"Failed to delete coverage: {r.status_code} {r.text}")
+                    return False
+
+                # Recreate coverage (this recreates layer automatically)
+                cov_xml = (
+                    f"<coverage>"
+                    f"  <name>{coverage_name}</name>"
+                    f"  <title>{safe_title}</title>"
+                    f"  <enabled>true</enabled>"
+                    f"</coverage>"
+                )
+
+                r = c.post(
+                    f"{self.base_url}/rest/workspaces/{ws}"
+                    f"/coveragestores/{store_name}/coverages",
+                    content=cov_xml,
                     headers={"Content-Type": "application/xml"},
                 )
-                if r.status_code in (200, 201):
-                    logger.info(f"Applied style '{ws}:{style_name}' to layer '{coverage_name}'")
-                else:
-                    logger.warning(
-                        f"Could not apply style to layer '{coverage_name}': "
-                        f"{r.status_code} {r.text}"
+
+                if r.status_code != 201:
+                    logger.error(f"Failed to recreate coverage: {r.status_code} {r.text}")
+                    return False
+
+                logger.info(f"Recreated coverage + layer '{ws}:{coverage_name}'")
+            else:
+                if style_name:
+                    layer_xml = (
+                        f"<layer>"
+                        f"  <defaultStyle><name>{style_name}</name><workspace>{ws}</workspace></defaultStyle>"
+                        f"</layer>"
                     )
+                    r = c.put(
+                        layer_url,
+                        content=layer_xml,
+                        headers={"Content-Type": "application/xml"},
+                    )
+                    if r.status_code in (200, 201):
+                        logger.info(f"Applied style '{ws}:{style_name}' to layer '{coverage_name}'")
+                    else:
+                        logger.warning(
+                            f"Could not apply style to layer '{coverage_name}': "
+                            f"{r.status_code} {r.text}"
+                        )
 
             return True
 
@@ -398,11 +644,22 @@ def derive_layer_info(entity: dict) -> Optional[dict]:
         layer_type = entity.get("layerType", {}).get("value", "unknown")
         name = layer_type.lower()
         title = entity.get("name", {}).get("value", name)
-        style = "dtm_style" if name == "dtm" else None
+        if name == "dtm":
+            style = "dtm_style"
+        elif name == "ndwi":
+            style = "ndwi_style"
+        elif name == "ndvi":
+            style = "ndvi_style"
+        elif name == "nir":
+            style = "nir_style"
+        elif name == "rgb":
+            style = "rgb_style"
+        else:
+            style = None
     elif entity_type == "UHIHeatMap":
         name = "uhi_prediction"
         title = entity.get("name", {}).get("value", "UHI Heat Risk Prediction")
-        style = None
+        style = "uhi_prediction_style"
     else:
         # Try to derive from geoserverLayer property
         gs_layer = entity.get("geoserverLayer", {}).get("value", "")

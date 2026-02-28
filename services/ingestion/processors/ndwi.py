@@ -28,14 +28,27 @@ logger = logging.getLogger(__name__)
 
 # Process in tiles of this size (adjust based on available memory)
 TILE_SIZE = 2048
+def _detect_nodata_mask(
+    src: rasterio.DatasetReader,
+    window: Window,
+    nodata_values: tuple[int, ...] = (254, 255),
+) -> np.ndarray:
+   
+    bands = src.read(window=window)   # shape (3, h, w)
 
+    nodata_mask = np.ones(bands.shape[1:], dtype=bool)  # (h, w), True
+    for band in bands:
+        band_is_nodata = np.isin(band, nodata_values)
+        nodata_mask &= band_is_nodata
 
+    return nodata_mask
 def calculate_ndwi(
     rgb_path: str,
     nir_path: str,
     output_path: str,
     green_band_index: int = 2,  # Green is band 2 in RGB (1-indexed)
-    tile_size: int = TILE_SIZE
+    tile_size: int = TILE_SIZE,
+    nodata_values: tuple[int, ...] = (254, 255)
 ) -> str:
     """
     Calculate NDWI from RGB and NIR orthophotos using windowed processing.
@@ -87,6 +100,10 @@ def calculate_ndwi(
                         
                         window = Window(col_off, row_off, win_width, win_height)
                         
+                        rgb_nodata = _detect_nodata_mask(rgb_src, window, nodata_values)
+                        nir_nodata = _detect_nodata_mask(nir_src, window, nodata_values)
+                        nodata_mask = rgb_nodata | nir_nodata
+
                         # Read tiles
                         green = rgb_src.read(green_band_index, window=window).astype(np.float32)
                         nir = nir_src.read(1, window=window).astype(np.float32)
@@ -98,10 +115,13 @@ def calculate_ndwi(
                             (green - nir) / denominator,
                             0
                         )
-                        ndwi = np.clip(ndwi, -1, 1)
+                        ndwi = np.clip(ndwi, -1.0, 1.0)
                         
                         # Scale to uint8: [-1, 1] -> [0, 254], 255 = nodata
                         ndwi_uint8 = ((ndwi + 1) / 2 * 254).astype(np.uint8)
+                        
+                        # Set nodata pixels to 255
+                        ndwi_uint8[nodata_mask] = 255
                         
                         # Write tile
                         dst.write(ndwi_uint8, 1, window=window)

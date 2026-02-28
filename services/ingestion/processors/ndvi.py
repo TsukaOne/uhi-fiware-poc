@@ -31,13 +31,28 @@ logger = logging.getLogger(__name__)
 # Process in tiles of this size (adjust based on available memory)
 TILE_SIZE = 2048
 
+def _detect_nodata_mask(
+    src: rasterio.DatasetReader,
+    window: Window,
+    nodata_values: tuple[int, ...] = (254, 255),
+) -> np.ndarray:
+   
+    bands = src.read(window=window)   # shape (3, h, w)
+
+    nodata_mask = np.ones(bands.shape[1:], dtype=bool)  # (h, w), True
+    for band in bands:
+        band_is_nodata = np.isin(band, nodata_values)
+        nodata_mask &= band_is_nodata
+
+    return nodata_mask
 
 def calculate_ndvi(
     rgb_path: str,
     nir_path: str,
     output_path: str,
     red_band_index: int = 1,  # Red is band 1 in RGB (1-indexed)
-    tile_size: int = TILE_SIZE
+    tile_size: int = TILE_SIZE,
+    nodata_values: tuple[int, ...] = (254, 255),      
 ) -> str:
     """
     Calculate NDVI from RGB and NIR orthophotos using windowed processing.
@@ -54,7 +69,7 @@ def calculate_ndvi(
         Path to the created NDVI GeoTIFF
     
     Encoding:
-        NDVI [-1, 1] -> uint8 [0, 254], 255 = nodata
+        NDVI [-1, 1] -> uint8 [0, 254]
         To decode: ndvi = (pixel_value / 254) * 2 - 1
     """
     logger.info(f"Calculating NDVI from RGB: {rgb_path} and NIR: {nir_path}")
@@ -88,10 +103,12 @@ def calculate_ndvi(
                         win_width = min(tile_size, width - col_off)
                         
                         window = Window(col_off, row_off, win_width, win_height)
-                        
+                        rgb_nodata = _detect_nodata_mask(rgb_src, window, nodata_values)
+                        nir_nodata = _detect_nodata_mask(nir_src, window, nodata_values)
+                        nodata_mask = rgb_nodata | nir_nodata
                         # Read tiles
                         red = rgb_src.read(red_band_index, window=window).astype(np.float32)
-                        nir = nir_src.read(1, window=window).astype(np.float32)
+                        nir = nir_src.read(1,              window=window).astype(np.float32)
                         
                         # Calculate NDVI
                         denominator = nir + red
@@ -100,10 +117,13 @@ def calculate_ndvi(
                             (nir - red) / denominator,
                             0
                         )
-                        ndvi = np.clip(ndvi, -1, 1)
+                        ndvi = np.clip(ndvi, -1.0, 1.0)
                         
                         # Scale to uint8: [-1, 1] -> [0, 254], 255 = nodata
                         ndvi_uint8 = ((ndvi + 1) / 2 * 254).astype(np.uint8)
+                        
+                        # Set nodata pixels to 255
+                        ndvi_uint8[nodata_mask] = 255
                         
                         # Write tile
                         dst.write(ndvi_uint8, 1, window=window)

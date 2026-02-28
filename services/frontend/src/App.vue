@@ -1,153 +1,127 @@
 <template>
   <div class="app-container">
+    <!-- NAVBAR -->
+    <nav class="navbar">
+      <div class="nav-left">
+        <button
+          class="nav-btn"
+          :class="{ active: viewMode === '2D' }"
+          @click="set2D"
+          title="2D Map View"
+        >
+          <i class="fas fa-map"></i>
+        </button>
+
+        <button
+          class="nav-btn"
+          :class="{ active: viewMode === '3D' }"
+          @click="set3D"
+          title="3D Globe View"
+        >
+          <i class="fas fa-cube"></i>
+        </button>
+
+        <button
+          class="nav-btn"
+          :class="{ active: showLayers }"
+          @click="toggleLayersPanel"
+          title="Toggle Layers Panel"
+        >
+          <i class="fas fa-layer-group"></i>
+        </button>
+
+        <button
+          class="nav-btn"
+          :class="{ active: showToolbox }"
+          @click="toggleToolbox"
+          title="Toolbox"
+        >
+          <i class="fas fa-toolbox"></i>
+        </button>
+      </div>
+
+      <div class="nav-center">
+        <h1>🌡️ Brussels Urban Heat Island Monitor</h1>
+      </div>
+
+      <div class="nav-right">
+        <button class="auth-btn">
+          <i class="fas fa-user-plus"></i>
+          Register
+        </button>
+        <button class="auth-btn">
+          <i class="fas fa-right-to-bracket"></i>
+          Login
+        </button>
+      </div>
+    </nav>
+    <!-- TOOLBOX MINI BAR -->
+    <div v-if="showToolbox" class="toolbox-bar">
+      <button class="tool-btn" title="Metadata">
+        <i class="fas fa-circle-info"></i>
+      </button>
+
+      <button class="tool-btn" title="Draw Polygon">
+        <i class="fas fa-draw-polygon"></i>
+      </button>
+
+      <button class="tool-btn" title="Draw Bounding Box">
+        <i class="fas fa-vector-square"></i>
+      </button>
+
+      <button class="tool-btn" title="Download Data">
+        <i class="fas fa-download"></i>
+      </button>
+
+      <button class="tool-btn" title="Swipe Content">
+        <i class="fas fa-arrows-left-right"></i>
+      </button>
+    </div>
+
+    <!-- 3D VIEWER -->
     <CesiumViewer 
       ref="viewer"
       :layers="layers"
       :activeLayers="activeLayers"
+      :viewMode="viewMode"
+      :buildingVisible="buildingVisible"
     />
-    <LayerControls 
+
+    <!-- LAYER CONTROLS PANEL -->
+    <LayerControls
+      v-if="showLayers"
       :layers="layers"
       :activeLayers="activeLayers"
+      :buildingVisible="buildingVisible"
       @toggle-layer="toggleLayer"
       @set-opacity="setOpacity"
+      @toggle-buildings="toggleBuildings"
     />
-    <div class="header">
-      <h1>🌡️ Brussels Urban Heat Island Monitor</h1>
-      <p>Visualizing NDVI, NDWI, and UHI predictions</p>
-    </div>
   </div>
 </template>
 
 <script setup>
-import { ref, reactive } from 'vue'
+import { useAppState } from './App.js'
 import CesiumViewer from './components/CesiumViewer.vue'
 import LayerControls from './components/LayerControls.vue'
 
-// WMS layer definitions
-const layers = reactive([
-  {
-    id: 'rgb',
-    name: 'RGB Orthophoto',
-    description: 'True color aerial imagery',
-    wmsLayer: 'uhi:rgb',
-    visible: false,
-    opacity: 1.0,
-    legend: null
-  },
-  {
-    id: 'nir',
-    name: 'NIR Orthophoto',
-    description: 'Near-infrared imagery',
-    wmsLayer: 'uhi:nir',
-    visible: false,
-    opacity: 1.0,
-    legend: null
-  },
-  {
-    id: 'ndvi',
-    name: 'NDVI',
-    description: 'Vegetation Index (-1 to 1)',
-    wmsLayer: 'uhi:ndvi',
-    visible: true,
-    opacity: 0.7,
-    legend: {
-      min: { value: -1, color: '#d73027', label: 'No vegetation' },
-      max: { value: 1, color: '#1a9850', label: 'Dense vegetation' }
-    }
-  },
-  {
-    id: 'ndwi',
-    name: 'NDWI',
-    description: 'Water Index (-1 to 1)',
-    wmsLayer: 'uhi:ndwi',
-    visible: false,
-    opacity: 0.7,
-    legend: {
-      min: { value: -1, color: '#8c510a', label: 'No water' },
-      max: { value: 1, color: '#01665e', label: 'Water' }
-    }
-  },
-  {
-    id: 'dtm',
-    name: 'DTM',
-    description: 'Digital Terrain Model',
-    wmsLayer: 'uhi:dtm',
-    visible: false,
-    opacity: 0.7,
-    legend: {
-      min: { value: 0, color: '#000000', label: 'Altitude 0' },
-      max: { value: 129, color: '#ffffff', label: 'Altitude Max' }
-    }
-  },
-  {
-    id: 'uhi_prediction',
-    name: 'UHI Heat Risk',
-    description: 'Heat island prediction (0-1)',
-    wmsLayer: 'uhi:uhi_prediction',
-    visible: false,
-    opacity: 0.7,
-    legend: {
-      min: { value: 0, color: '#2166ac', label: 'Cool' },
-      max: { value: 1, color: '#b2182b', label: 'Hot' }
-    }
-  }
-])
-
-const activeLayers = ref(['ndvi'])
-const viewer = ref(null)
-
-function toggleLayer(layerId) {
-  const layer = layers.find(l => l.id === layerId)
-  if (layer) {
-    layer.visible = !layer.visible
-    if (layer.visible) {
-      if (!activeLayers.value.includes(layerId)) {
-        activeLayers.value.push(layerId)
-      }
-    } else {
-      activeLayers.value = activeLayers.value.filter(id => id !== layerId)
-    }
-  }
-}
-
-function setOpacity(layerId, opacity) {
-  const layer = layers.find(l => l.id === layerId)
-  if (layer) {
-    layer.opacity = opacity
-  }
-}
+const {
+  viewMode,
+  showLayers,
+  layers,
+  activeLayers,
+  buildingVisible,
+  showToolbox,
+  set2D,
+  set3D,
+  toggleLayersPanel,
+  toggleLayer,
+  setOpacity,
+  toggleBuildings,
+  toggleToolbox
+} = useAppState()
 </script>
 
-<style>
-.app-container {
-  width: 100%;
-  height: 100%;
-  position: relative;
-  font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
-}
-
-.header {
-  position: absolute;
-  top: 20px;
-  left: 50%;
-  transform: translateX(-50%);
-  text-align: center;
-  color: white;
-  text-shadow: 0 2px 4px rgba(0, 0, 0, 0.5);
-  pointer-events: none;
-  z-index: 100;
-}
-
-.header h1 {
-  font-size: 1.8rem;
-  font-weight: 600;
-  margin-bottom: 4px;
-}
-
-.header p {
-  font-size: 0.95rem;
-  opacity: 0.9;
-}
-</style>
+<style src="./App.css"></style>
 
 

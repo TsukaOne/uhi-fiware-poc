@@ -54,7 +54,6 @@ def process_dtm(
 
         height = src.height
         width = src.width
-
         # First pass: find min/max for normalization
         valid_data = []
         for row_off in range(0, height, tile_size):

@@ -78,8 +78,25 @@ services:
       # Entity IDs of input layers (the only "knowledge" the prediction service has)
       - NDVI_ENTITY_ID=urn:ngsi-ld:GeoSpatialLayer:NDVI:brussels:2024
       - NDWI_ENTITY_ID=urn:ngsi-ld:GeoSpatialLayer:NDWI:brussels:2024
+      - DTM_ENTITY_ID=urn:ngsi-ld:GeoSpatialLayer:DTM:brussels:2024
+      - BUILDING_HEIGHT_ENTITY_ID=urn:ngsi-ld:GeoSpatialLayer:BuildingHeight:brussels:2024
+      - LST_ENTITY_ID=urn:ngsi-ld:GeoSpatialLayer:LST:brussels:2024
+      # Rural reference point (for LST)
+      - RURAL_POINT_ROW=15561
+      - RURAL_POINT_COL=12526
+      # Training Hyparameters (can be overridden by API calls)
+      - TRAINING_SAMPLE_RATE=0.005
+      - TRAINING_N_ESTIMATORS=500
+      - TRAINING_MAX_DEPTH=8
+      - TRAINING_LEARNING_RATE=0.05
+      - TRAINING_USE_GPU=true
+      # Model and cache storage paths
+      - MODEL_PATH=/data/models
+      - CACHE_PATH=/data/cache
     volumes:
       - ./data/processed:/data/processed
+      - ./data/models:/data/models
+      - ./data/cache:/data/cache
     depends_on:
       orion:
         condition: service_healthy

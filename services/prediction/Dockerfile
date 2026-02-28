@@ -7,6 +7,7 @@ RUN apt-get update && apt-get install -y \
     libgdal-dev \
     gdal-bin \
     curl \
+    libgomp1 \
     && rm -rf /var/lib/apt/lists/*
 
 # Set GDAL environment variables
