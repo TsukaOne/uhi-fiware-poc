@@ -1,6 +1,6 @@
 .layer-panel {
   position: absolute;
-  top: 80px;
+  top: 20px;
   left: 20px;
   width: 320px;
   max-height: calc(100vh - 120px);
@@ -10,7 +10,7 @@
   box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
   z-index: 1000;
   overflow: hidden;
-  transition: width 0.3s ease;
+  transition: width 0.3s ease, transform 0.3s ease;
 }
 
 .layer-panel.collapsed {
@@ -18,7 +18,9 @@
 }
 
 .toggle-btn {
-  display: block;
+  display: flex;
+  align-items: center;
+  gap: 8px;
   width: 100%;
   padding: 12px 16px;
   background: rgba(255, 255, 255, 0.1);
@@ -101,6 +103,10 @@
 .layer-item.active {
   background: rgba(66, 153, 225, 0.15);
   border-color: rgba(66, 153, 225, 0.3);
+}
+
+.layer-item:hover {
+  background: rgba(255, 255, 255, 0.08);
 }
 
 .layer-header {
@@ -266,4 +272,11 @@
 .info-section li strong {
   color: #4299e1;
   font-weight: 600;
+}
+@media (max-width: 768px) {
+  .layer-panel {
+    width: 90%;
+    left: 5%;
+    top: 10px;
+  }
 }

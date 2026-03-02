@@ -3,7 +3,7 @@ import * as Cesium from 'cesium'
 
 /**
  * CESIUM VIEWER ARCHITECTURE
- * 
+ *
  * PERFORMANCE CRITICAL:
  * - Tileset is loaded ONCE and never destroyed
  * - Visibility toggled via .show property
@@ -18,6 +18,14 @@ let viewer = null
 let buildingTileset = null
 let terrainProvider = null
 const wmsLayers = new Map()
+
+// Drawing state
+let drawingMode = null
+let isDrawing = false
+let drawnPoints = []
+let drawnEntities = new Map()
+let activeEntity = null
+let mouseHandler = null
 
 // GeoServer WMS endpoint
 const GEOSERVER_URL = window.location.port === '3000' 
@@ -35,8 +43,8 @@ const BRUSSELS_CENTER = {
 // CESIUM INITIALIZATION
 // ========================================
 
-export function useCesiumViewer(props) {
-  
+export function useCesiumViewer(props, emit) {
+
   onMounted(async () => {
     await initCesium()
   })
@@ -44,9 +52,6 @@ export function useCesiumViewer(props) {
   onUnmounted(() => {
     cleanupCesium()
   })
-
-  
-   /**Initialize Cesium viewer and tileset ONCE**/
    
   async function initCesium() {
     // Set Cesium Ion token for 3D tileset streaming
@@ -239,8 +244,175 @@ export function useCesiumViewer(props) {
   }
 
   // ========================================
-  // IMAGERY PROVIDER SETUP
+  // DRAWING FUNCTIONS
   // ========================================
+
+  function startDrawing(mode) {
+    if (!viewer) return
+
+    drawingMode = mode
+    drawnPoints = []
+    isDrawing = true
+
+    // Initialize mouse handler for drawing
+    if (!mouseHandler) {
+      mouseHandler = new Cesium.ScreenSpaceEventHandler(viewer.scene.canvas)
+    }
+
+    // Handle mouse click for adding points
+    mouseHandler.setInputAction((click) => {
+      if (!isDrawing || !drawingMode) return
+
+      const pickedObject = viewer.scene.pick(click.position)
+      let cartesian
+
+      if (Cesium.defined(pickedObject)) {
+        cartesian = viewer.scene.pickPosition(click.position)
+      } else {
+        cartesian = viewer.camera.pickEllipsoid(click.position, viewer.scene.globe.ellipsoid)
+      }
+
+      if (!Cesium.defined(cartesian)) return
+
+      const cartographic = Cesium.Cartographic.fromCartesian(cartesian)
+      drawnPoints.push({
+        longitude: Cesium.Math.toDegrees(cartographic.longitude),
+        latitude: Cesium.Math.toDegrees(cartographic.latitude),
+        cartesian: cartesian
+      })
+
+      // Visual feedback: draw points as circles
+      viewer.entities.add({
+        position: cartesian,
+        point: {
+          pixelSize: 8,
+          color: Cesium.Color.GREEN,
+          outlineColor: Cesium.Color.WHITE,
+          outlineWidth: 2
+        }
+      })
+
+      // Update geometry visualization
+      updateDrawingVisualization()
+    }, Cesium.ScreenSpaceEventType.LEFT_CLICK)
+
+    // Handle right-click to finish drawing
+    mouseHandler.setInputAction(() => {
+      if (!isDrawing || !drawingMode) return
+      finishDrawing()
+    }, Cesium.ScreenSpaceEventType.RIGHT_CLICK)
+
+    console.log(`→ Drawing mode started: ${mode}`)
+  }
+
+  function updateDrawingVisualization() {
+    if (!drawingMode || drawnPoints.length < 2) return
+
+    // Remove previous preview entity if exists
+    if (activeEntity) {
+      viewer.entities.remove(activeEntity)
+    }
+
+    if (drawingMode === 'polygon') {
+      const positions = drawnPoints.map(p => p.cartesian)
+
+      activeEntity = viewer.entities.add({
+        polygon: {
+          hierarchy: new Cesium.PolygonHierarchy(positions),
+          material: Cesium.Color.GREEN.withAlpha(0.3),
+          outline: true,
+          outlineColor: Cesium.Color.WHITE,
+          outlineWidth: 2
+        }
+      })
+    } else if (drawingMode === 'boundingBox') {
+      if (drawnPoints.length >= 2) {
+        const minLat = Math.min(drawnPoints[0].latitude, drawnPoints[1].latitude)
+        const maxLat = Math.max(drawnPoints[0].latitude, drawnPoints[1].latitude)
+        const minLon = Math.min(drawnPoints[0].longitude, drawnPoints[1].longitude)
+        const maxLon = Math.max(drawnPoints[0].longitude, drawnPoints[1].longitude)
+
+        const boxCorners = [
+          Cesium.Cartesian3.fromDegrees(minLon, minLat),
+          Cesium.Cartesian3.fromDegrees(maxLon, minLat),
+          Cesium.Cartesian3.fromDegrees(maxLon, maxLat),
+          Cesium.Cartesian3.fromDegrees(minLon, maxLat)
+        ]
+
+        activeEntity = viewer.entities.add({
+          polygon: {
+            hierarchy: new Cesium.PolygonHierarchy(boxCorners),
+            material: Cesium.Color.BLUE.withAlpha(0.3),
+            outline: true,
+            outlineColor: Cesium.Color.WHITE,
+            outlineWidth: 2
+          }
+        })
+      }
+    }
+  }
+
+  function finishDrawing() {
+    if (drawnPoints.length < 2) {
+      console.warn('Not enough points drawn')
+      stopDrawing()
+      return
+    }
+
+    const geometry = {
+      type: drawingMode,
+      points: drawnPoints,
+      timestamp: new Date().toISOString()
+    }
+
+    if (drawingMode === 'polygon') {
+      geometry.geoJSON = {
+        type: 'Polygon',
+        coordinates: [drawnPoints.map(p => [p.longitude, p.latitude])]
+      }
+    } else if (drawingMode === 'boundingBox') {
+      const minLat = Math.min(drawnPoints[0].latitude, drawnPoints[1].latitude)
+      const maxLat = Math.max(drawnPoints[0].latitude, drawnPoints[1].latitude)
+      const minLon = Math.min(drawnPoints[0].longitude, drawnPoints[1].longitude)
+      const maxLon = Math.max(drawnPoints[0].longitude, drawnPoints[1].longitude)
+
+      geometry.bounds = { minLon, maxLon, minLat, maxLat }
+      geometry.geoJSON = {
+        type: 'Polygon',
+        coordinates: [[
+          [minLon, minLat],
+          [maxLon, minLat],
+          [maxLon, maxLat],
+          [minLon, maxLat],
+          [minLon, minLat]
+        ]]
+      }
+    }
+
+    console.log('→ Drawing finished:', geometry)
+
+    // Emit geometry to parent component
+    if (emit) {
+      emit('geometry-drawn', geometry)
+    }
+
+    stopDrawing()
+  }
+
+  function stopDrawing() {
+    isDrawing = false
+    drawingMode = null
+    drawnPoints = []
+
+    if (mouseHandler) {
+      mouseHandler.removeInputAction(Cesium.ScreenSpaceEventType.LEFT_CLICK)
+      mouseHandler.removeInputAction(Cesium.ScreenSpaceEventType.RIGHT_CLICK)
+      mouseHandler.destroy()
+      mouseHandler = null
+    }
+
+    console.log('→ Drawing mode stopped')
+  }
 
   function setupImageryProviders() {
     // Remove default imagery
@@ -338,6 +510,15 @@ export function useCesiumViewer(props) {
     },
     { deep: true }
   )
+
+  // Watch drawing mode changes
+  watch(() => props.drawingMode, (newMode) => {
+    if (newMode) {
+      startDrawing(newMode)
+    } else if (isDrawing) {
+      stopDrawing()
+    }
+  })
 
   // ========================================
   // CLEANUP

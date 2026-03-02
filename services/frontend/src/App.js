@@ -9,9 +9,14 @@ export function useAppState() {
   const viewMode = ref('3D')
   const showLayers = ref(true)
   const showToolbox = ref(false)
-  
+
   // 3D Tileset state
   const buildingVisible = ref(true)
+
+  // Drawing state
+  const drawingMode = ref(null) // 'polygon' | 'boundingBox' | null
+  const showPredictMenu = ref(false)
+  const drawnGeometries = ref([])
 
   // WMS layer definitions organized into categories
   const layers = reactive([
@@ -151,6 +156,37 @@ export function useAppState() {
     showToolbox.value = !showToolbox.value
   }
 
+  // ========================================
+  // DRAWING HANDLERS
+  // ========================================
+
+  function togglePredictMenu() {
+    showPredictMenu.value = !showPredictMenu.value
+  }
+
+  function startDrawingPolygon() {
+    drawingMode.value = 'polygon'
+    showPredictMenu.value = false
+  }
+
+  function startDrawingBoundingBox() {
+    drawingMode.value = 'boundingBox'
+    showPredictMenu.value = false
+  }
+
+  function stopDrawing() {
+    drawingMode.value = null
+  }
+
+  function addGeometry(geometry) {
+    drawnGeometries.value.push(geometry)
+    console.log('Geometry added:', geometry)
+  }
+
+  function clearGeometries() {
+    drawnGeometries.value = []
+  }
+
   return {
     viewMode,
     showLayers,
@@ -158,12 +194,21 @@ export function useAppState() {
     layers,
     activeLayers,
     buildingVisible,
+    drawingMode,
+    showPredictMenu,
+    drawnGeometries,
     set2D,
     set3D,
     toggleLayersPanel,
     toggleLayer,
     setOpacity,
     toggleBuildings,
-    toggleToolbox
+    toggleToolbox,
+    togglePredictMenu,
+    startDrawingPolygon,
+    startDrawingBoundingBox,
+    stopDrawing,
+    addGeometry,
+    clearGeometries
   }
 }

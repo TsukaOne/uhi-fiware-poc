@@ -21,10 +21,16 @@ const props = defineProps({
   buildingVisible: {
     type: Boolean,
     default: true
+  },
+  drawingMode: {
+    type: String,
+    default: null
   }
 })
 
-const { cesiumContainer, getViewer, flyTo } = useCesiumViewer(props)
+const emit = defineEmits(['geometry-drawn'])
+
+const { cesiumContainer, getViewer, flyTo } = useCesiumViewer(props, emit)
 
 defineExpose({
   getViewer,

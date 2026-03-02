@@ -1,6 +1,6 @@
 <template>
-  <div class="layer-panel" :class="{ collapsed: isCollapsed }">
-    <button class="toggle-btn" @click="isCollapsed = !isCollapsed">
+  <div class="layer-panel" :class="{ collapsed: isCollapsed }" :style="panelStyle" >
+    <button class="toggle-btn" @click="isCollapsed = !isCollapsed" @mousedown.stop="startDragPanel">
       <i v-if="isCollapsed" class="fas fa-chevron-left"></i>
       <i v-else class="fas fa-chevron-right"></i>
       Layers
@@ -147,31 +147,72 @@
 </template>
 
 <script setup>
-import { ref } from 'vue'
-import { useLayerControls } from './LayerControls.js'
+  import { ref, computed, onMounted, onBeforeUnmount } from 'vue'
+  import { useLayerControls } from './LayerControls.js'
+  const props = defineProps({
+    layers: {
+      type: Array,
+      required: true
+    },
+    activeLayers: {
+      type: Array,
+      default: () => []
+    },
+    buildingVisible: {
+      type: Boolean,
+      default: true
+    }
+  })
 
-const props = defineProps({
-  layers: {
-    type: Array,
-    required: true
-  },
-  activeLayers: {
-    type: Array,
-    default: () => []
-  },
-  buildingVisible: {
-    type: Boolean,
-    default: true
+  defineEmits(['toggle-layer', 'set-opacity', 'toggle-buildings'])
+
+
+  const { isCollapsed, getLegendStyle } = useLayerControls()
+
+
+  function getLayersByCategory(category) {
+    return props.layers.filter(layer => layer.category === category)
   }
-})
 
-defineEmits(['toggle-layer', 'set-opacity', 'toggle-buildings'])
+  // Drag state
+  const panelPosition = ref({
+    x: 20,
+    y: 100
+  })
 
+  const isDraggingPanel = ref(false)
+  let offsetX = 0
+  let offsetY = 0
 
-const { isCollapsed, getLegendStyle } = useLayerControls()
+  const panelStyle = computed(() => ({
+    left: panelPosition.value.x + 'px',
+    top: panelPosition.value.y + 'px'
+  }))
 
-function getLayersByCategory(category) {
-  return props.layers.filter(layer => layer.category === category)
-}
+  function startDragPanel(e) {
+    isDraggingPanel.value = true
+    offsetX = e.clientX - panelPosition.value.x
+    offsetY = e.clientY - panelPosition.value.y
+  }
+
+  function onMouseMove(e) {
+    if (!isDraggingPanel.value) return
+    panelPosition.value.x = e.clientX - offsetX
+    panelPosition.value.y = e.clientY - offsetY
+  }
+
+  function stopDrag() {
+    isDraggingPanel.value = false
+  }
+
+  onMounted(() => {
+    window.addEventListener('mousemove', onMouseMove)
+    window.addEventListener('mouseup', stopDrag)
+  })
+
+  onBeforeUnmount(() => {
+    window.removeEventListener('mousemove', onMouseMove)
+    window.removeEventListener('mouseup', stopDrag)
+  })
 </script>
 <style src="./LayerControls.css"></style>
