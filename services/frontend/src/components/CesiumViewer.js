@@ -2,15 +2,7 @@ import { ref, onMounted, onUnmounted, watch } from 'vue'
 import * as Cesium from 'cesium'
 
 /**
- * CESIUM VIEWER ARCHITECTURE
- *
- * PERFORMANCE CRITICAL:
- * - Tileset is loaded ONCE and never destroyed
- * - Visibility toggled via .show property
- * - No re-instantiation on mode switches
- * - Memory and GPU cache persist across 2D/3D transitions
- * - Terrain loaded once and reused
- * - Tileset snapped to terrain with depth testing enabled
+ * CESIUM VIEWER COMPONENT
  */
 
 const cesiumContainer = ref(null)
@@ -21,16 +13,23 @@ const wmsLayers = new Map()
 
 // Drawing state
 let drawingMode = null
+
+// Swipe state
+let swipeActive = false
+const preSwipeLayerShow = new Map()
 let isDrawing = false
 let drawnPoints = []
 let drawnEntities = new Map()
 let activeEntity = null
 let mouseHandler = null
+let previewEntity = null
+let currentMousePosition = null
+let pointEntities = []
 
 // GeoServer WMS endpoint
 const GEOSERVER_URL = window.location.port === '3000' 
-  ? '/geoserver'  // Proxied through nginx in Docker
-  : 'http://localhost:8080/geoserver'  // Direct for local development
+  ? '/geoserver' 
+  : 'http://localhost:8080/geoserver'  
 
 // Brussels center coordinates (WGS84)
 const BRUSSELS_CENTER = {
@@ -39,22 +38,26 @@ const BRUSSELS_CENTER = {
   height: 5000
 }
 
-// ========================================
-// CESIUM INITIALIZATION
-// ========================================
 
 export function useCesiumViewer(props, emit) {
 
+  
+  // ========================================
+  // CESIUM INITIALIZATION
+  // ========================================
+
+  // Initialize Cesium viewer on component mount
   onMounted(async () => {
     await initCesium()
   })
-
+  
+  // Clean up Cesium resources on component unmount
   onUnmounted(() => {
     cleanupCesium()
   })
    
   async function initCesium() {
-    // Set Cesium Ion token for 3D tileset streaming
+    // TODO: Set Cesium Ion token for 3D tileset streaming
     Cesium.Ion.defaultAccessToken = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJqdGkiOiJhY2E3ZDhlNC03Yjc0LTQzM2QtYmI5My0zYWQ3NjIwOTk0OTciLCJpZCI6Mjc4NzM4LCJpYXQiOjE3NDA0ODg1MjB9.VsZjL6pbKSwR_SBbxUq-KRweOU_P3R8DKjSpeD0EICY"
 
     // Initialize viewer with minimal UI
@@ -91,6 +94,7 @@ export function useCesiumViewer(props, emit) {
     // ========================================
     // DEPTH TESTING 
     // ========================================
+
     // Enable depth testing so buildings respect terrain
     viewer.scene.globe.depthTestAgainstTerrain = true
 
@@ -116,6 +120,7 @@ export function useCesiumViewer(props, emit) {
     // LOAD TILESET
     // ========================================
     try {
+      // Load 3D tileset from Cesium ion asset
       buildingTileset = await Cesium.Cesium3DTileset.fromIonAssetId(3474524)
       
       // Add to scene (visible by default for 3D mode)
@@ -123,6 +128,7 @@ export function useCesiumViewer(props, emit) {
       
       // Sample terrain at Brussels center to ensure tileset sits on ground
       try {
+        // Convert Brussels center to Cesium Cartesian
         const bruxellesCartesian = Cesium.Cartesian3.fromDegrees(
           BRUSSELS_CENTER.longitude,
           BRUSSELS_CENTER.latitude
@@ -144,7 +150,9 @@ export function useCesiumViewer(props, emit) {
     } catch (error) {
     }
 
-    // Add initial WMS layers
+    // ========================================
+    // INIT INITIAL WMS LAYERS
+    // ========================================
     if (props.layers) {
       props.layers.forEach(layer => {
         if (layer.visible) {
@@ -153,32 +161,37 @@ export function useCesiumViewer(props, emit) {
       })
     }
   }
+  let manualPanHandler = null
 
-  /**INTERACTION MODE SWITCHING **/
   function updateViewMode(mode) {
     if (!viewer) return
+    const controller = viewer.scene.screenSpaceCameraController
 
+    if (manualPanHandler) {
+      manualPanHandler.destroy()
+      manualPanHandler = null
+    }
     if (mode === '2D') {
       // ========================================
       // 2D MODE: CONSTRAINED TOP-DOWN 3D
       // ========================================
       
       // Lock camera navigation to top-down only
-      viewer.scene.screenSpaceCameraController.enableTilt = false
-      viewer.scene.screenSpaceCameraController.enableRotate = false
-      viewer.scene.screenSpaceCameraController.enableLook = false
+      controller.enableTilt = false
+      controller.enableRotate = false
+      controller.enableLook = false
+      // Allow pan and zoom
+      controller.enableTranslate = false
+      controller.enableZoom = true
 
-      viewer.scene.screenSpaceCameraController.rotateEventTypes = []
-      viewer.scene.screenSpaceCameraController.tiltEventTypes = []
-      viewer.scene.screenSpaceCameraController.lookEventTypes = []
+      controller.rotateEventTypes = []
+      controller.tiltEventTypes = []
+      controller.lookEventTypes = []
+      controller.translateEventTypes = []
 
-      viewer.scene.screenSpaceCameraController.translateEventTypes = [
+      controller.translateEventTypes = [
         Cesium.CameraEventType.LEFT_DRAG
      ]
-      
-      // Allow pan and zoom
-      viewer.scene.screenSpaceCameraController.enableTranslate = true
-      viewer.scene.screenSpaceCameraController.enableZoom = true
       
       // Force camera to strict top-down orientation
       viewer.camera.setView({
@@ -189,44 +202,107 @@ export function useCesiumViewer(props, emit) {
           roll: 0
         }
       })
-      
-      // Disable lighting effects for cleaner map rendering
-      viewer.scene.globe.enableLighting = false
-      
-      // Keep buildings visible 
-      if (buildingTileset) {
-        buildingTileset.show = true
-      }
-      
-      // Keep fog disabled for clear cartographic view
-      viewer.scene.fog.enabled = false
-      
-      console.log('→ 2D Mode: Constrained top-down view (map-like interaction)')
 
+      let isDragging = false
+      let lastMousePosition = null
+
+      manualPanHandler = new Cesium.ScreenSpaceEventHandler(viewer.scene.canvas)
+
+      manualPanHandler.setInputAction((event) => {
+        isDragging = true
+        lastMousePosition = Cesium.Cartesian2.clone(event.position)
+      }, Cesium.ScreenSpaceEventType.LEFT_DOWN)
+
+      manualPanHandler.setInputAction((event) => {
+        if (!isDragging || !lastMousePosition) return
+
+        // Récupérer la position monde sous la souris (avant et après mouvement)
+        const currentPos = event.endPosition
+
+        const ray1 = viewer.camera.getPickRay(lastMousePosition)
+        const ray2 = viewer.camera.getPickRay(currentPos)
+
+        if (!ray1 || !ray2) return
+
+        const globe = viewer.scene.globe
+        const p1 = globe.pick(ray1, viewer.scene)
+        const p2 = globe.pick(ray2, viewer.scene)
+
+        if (!p1 || !p2) return
+
+        // Calculer le delta et déplacer la caméra dans la direction opposée
+        const delta = Cesium.Cartesian3.subtract(p1, p2, new Cesium.Cartesian3())
+        viewer.camera.position = Cesium.Cartesian3.add(
+          viewer.camera.position,
+          delta,
+          new Cesium.Cartesian3()
+        )
+
+        lastMousePosition = Cesium.Cartesian2.clone(currentPos)
+      }, Cesium.ScreenSpaceEventType.MOUSE_MOVE)
+
+      manualPanHandler.setInputAction(() => {
+        isDragging = false
+        lastMousePosition = null
+      }, Cesium.ScreenSpaceEventType.LEFT_UP)
+        
+        // Disable lighting effects for cleaner map rendering (unless sun sim active)
+        if (!props.sunSimEnabled) {
+          viewer.scene.globe.enableLighting = false
+        }
+        viewer.scene.fog.enabled = false
+        
+        // Keep buildings hidden in 2D mode for a cleaner cartographic view
+        if (buildingTileset) {
+          buildingTileset.show = false
+        }
+        
+        // Keep fog disabled for clear cartographic view
+        viewer.scene.fog.enabled = false
+      
     } else if (mode === '3D') {
       // ========================================
       // 3D MODE: FULL CESIUM INTERACTION
       // ========================================
-      // Full unrestricted 3D navigation
-      
+      controller.rotateEventTypes = [
+        Cesium.CameraEventType.LEFT_DRAG
+      ]
+      controller.tiltEventTypes = [
+        Cesium.CameraEventType.MIDDLE_DRAG,
+        Cesium.CameraEventType.PINCH,
+        { eventType: Cesium.CameraEventType.LEFT_DRAG, modifier: Cesium.KeyboardEventModifier.CTRL },
+        { eventType: Cesium.CameraEventType.RIGHT_DRAG, modifier: Cesium.KeyboardEventModifier.CTRL }
+      ]
+      controller.lookEventTypes = [
+        { eventType: Cesium.CameraEventType.LEFT_DRAG, modifier: Cesium.KeyboardEventModifier.SHIFT }
+      ]
+      controller.translateEventTypes = [
+        Cesium.CameraEventType.LEFT_DRAG
+      ]
       // Enable all camera controls
-      viewer.scene.screenSpaceCameraController.enableTilt = true
-      viewer.scene.screenSpaceCameraController.enableRotate = true
-      viewer.scene.screenSpaceCameraController.enableLook = true
-      viewer.scene.screenSpaceCameraController.enableTranslate = true
-      viewer.scene.screenSpaceCameraController.enableZoom = true
+      controller.enableTilt = true
+      controller.enableRotate = true
+      controller.enableLook = true
+      controller.enableTranslate = true
+      controller.enableZoom = true
+      controller.enableRubberBandSelect = false
       
       // Disable rubber band select for cleaner interaction
-      viewer.scene.screenSpaceCameraController.enableRubberBandSelect = false
+      controller.enableRubberBandSelect = false
       
-      viewer.scene.globe.enableLighting = false
-      
+      viewer.scene.globe.enableLighting = props.sunSimEnabled
+
       // Ensure atmosphere is visible
       viewer.scene.skyAtmosphere.show = true
-      
+
       // Show buildings with full 3D context
       if (buildingTileset) {
         buildingTileset.show = true
+      }
+
+      // Restore sun simulation shadows if active
+      if (props.sunSimEnabled) {
+        updateSunSimulation(true, props.sunSimTime)
       }
       
       // Move camera to 3D perspective 
@@ -246,13 +322,16 @@ export function useCesiumViewer(props, emit) {
   // ========================================
   // DRAWING FUNCTIONS
   // ========================================
-
+  // Start drawing mode for specified geometry type (polygon or bounding box)
   function startDrawing(mode) {
     if (!viewer) return
 
     drawingMode = mode
     drawnPoints = []
     isDrawing = true
+    
+    // Emit drawing mode state
+    if (emit) emit('drawing-active', true)
 
     // Initialize mouse handler for drawing
     if (!mouseHandler) {
@@ -262,39 +341,51 @@ export function useCesiumViewer(props, emit) {
     // Handle mouse click for adding points
     mouseHandler.setInputAction((click) => {
       if (!isDrawing || !drawingMode) return
+      let cartesian = viewer.scene.pickPosition(click.position)
+      if (!Cesium.defined(cartesian)) {
+        const ray = viewer.camera.getPickRay(click.position)
+        if (ray) cartesian = viewer.scene.globe.pick(ray, viewer.scene)
+      }
 
-      const pickedObject = viewer.scene.pick(click.position)
-      let cartesian
-
-      if (Cesium.defined(pickedObject)) {
-        cartesian = viewer.scene.pickPosition(click.position)
-      } else {
-        cartesian = viewer.camera.pickEllipsoid(click.position, viewer.scene.globe.ellipsoid)
+      // 3. Dernier recours : ellipsoïde
+      if (!Cesium.defined(cartesian)) {
+        cartesian = viewer.camera.pickEllipsoid(
+          click.position,
+          viewer.scene.globe.ellipsoid
+        )
       }
 
       if (!Cesium.defined(cartesian)) return
 
-      const cartographic = Cesium.Cartographic.fromCartesian(cartesian)
-      drawnPoints.push({
-        longitude: Cesium.Math.toDegrees(cartographic.longitude),
-        latitude: Cesium.Math.toDegrees(cartographic.latitude),
-        cartesian: cartesian
-      })
+      let cartographic = Cesium.Cartographic.fromCartesian(cartesian)
+      
+      const lon = Cesium.Math.toDegrees(cartographic.longitude)
+      const lat = Cesium.Math.toDegrees(cartographic.latitude)
+
+      cartesian = Cesium.Cartesian3.fromDegrees(lon, lat, cartographic.height)
+
+      drawnPoints.push({ longitude: lon, latitude: lat, cartesian })
 
       // Visual feedback: draw points as circles
-      viewer.entities.add({
+      const pointEntity = viewer.entities.add({
         position: cartesian,
         point: {
           pixelSize: 8,
           color: Cesium.Color.GREEN,
           outlineColor: Cesium.Color.WHITE,
-          outlineWidth: 2
+          outlineWidth: 2,
+          heightReference: Cesium.HeightReference.CLAMP_TO_GROUND,
         }
       })
-
-      // Update geometry visualization
-      updateDrawingVisualization()
+      pointEntities.push(pointEntity)
     }, Cesium.ScreenSpaceEventType.LEFT_CLICK)
+
+    // Handle mouse move to update preview entity
+    mouseHandler.setInputAction((move) => {
+      if (!isDrawing || !drawingMode) return
+      currentMousePosition = move.endPosition
+      updateDrawingPreview(move.endPosition)
+    }, Cesium.ScreenSpaceEventType.MOUSE_MOVE)
 
     // Handle right-click to finish drawing
     mouseHandler.setInputAction(() => {
@@ -302,61 +393,91 @@ export function useCesiumViewer(props, emit) {
       finishDrawing()
     }, Cesium.ScreenSpaceEventType.RIGHT_CLICK)
 
-    console.log(`→ Drawing mode started: ${mode}`)
   }
+  // Update drawing visualization (preview entity and legend)
+  function updateDrawingPreview(mousePos) {
+    if (!drawingMode || drawnPoints.length < 1) return
+    
+    // Ray pick to get accurate position on terrain
+    const ray = viewer.camera.getPickRay(mousePos)
+    const mouseCartesian = ray
+      ? viewer.scene.globe.pick(ray, viewer.scene) ||
+        viewer.camera.pickEllipsoid(mousePos, viewer.scene.globe.ellipsoid)
+      : null
 
-  function updateDrawingVisualization() {
-    if (!drawingMode || drawnPoints.length < 2) return
+    if (!mouseCartesian) return
 
-    // Remove previous preview entity if exists
-    if (activeEntity) {
-      viewer.entities.remove(activeEntity)
+    // Remove previous entity if exists
+    if (previewEntity) {
+      viewer.entities.remove(previewEntity)
+      previewEntity = null
     }
 
-    if (drawingMode === 'polygon') {
-      const positions = drawnPoints.map(p => p.cartesian)
-
-      activeEntity = viewer.entities.add({
+    if (drawingMode === 'polygon' && drawnPoints.length >=2) {
+      const positions = [...drawnPoints.map(p => p.cartesian), mouseCartesian]
+      previewEntity = viewer.entities.add({
         polygon: {
           hierarchy: new Cesium.PolygonHierarchy(positions),
-          material: Cesium.Color.GREEN.withAlpha(0.3),
+          material: Cesium.Color.GREEN.withAlpha(0.2),
           outline: true,
-          outlineColor: Cesium.Color.WHITE,
-          outlineWidth: 2
+          outlineColor: Cesium.Color.LIME,
+          outlineWidth: 2,
+          heightReference: Cesium.HeightReference.CLAMP_TO_GROUND, // ← ici
+          classificationType: Cesium.ClassificationType.TERRAIN
         }
       })
-    } else if (drawingMode === 'boundingBox') {
-      if (drawnPoints.length >= 2) {
-        const minLat = Math.min(drawnPoints[0].latitude, drawnPoints[1].latitude)
-        const maxLat = Math.max(drawnPoints[0].latitude, drawnPoints[1].latitude)
-        const minLon = Math.min(drawnPoints[0].longitude, drawnPoints[1].longitude)
-        const maxLon = Math.max(drawnPoints[0].longitude, drawnPoints[1].longitude)
+    } 
+    else if (drawingMode === 'polygon' && drawnPoints.length === 1) {
+      // Draw single point as polyline
+      previewEntity = viewer.entities.add({
+        polyline: {
+          positions: [drawnPoints[0].cartesian, mouseCartesian],
+          width: 2,
+          material: Cesium.Color.LIME.withAlpha(0.8),
+          clampToGround: true,
+        }
+      })
+    }
+    else if (drawingMode === 'boundingBox' && drawnPoints.length  >= 1) {
+      const mouseCartographic = Cesium.Cartographic.fromCartesian(mouseCartesian)
+      const mouseLon = Cesium.Math.toDegrees(mouseCartographic.longitude)
+      const mouseLat = Cesium.Math.toDegrees(mouseCartographic.latitude)
+      
+      const minLat = Math.min(drawnPoints[0].latitude, mouseLat)
+      const maxLat = Math.max(drawnPoints[0].latitude, mouseLat)
+      const minLon = Math.min(drawnPoints[0].longitude, mouseLon)
+      const maxLon = Math.max(drawnPoints[0].longitude, mouseLon)
 
-        const boxCorners = [
-          Cesium.Cartesian3.fromDegrees(minLon, minLat),
-          Cesium.Cartesian3.fromDegrees(maxLon, minLat),
-          Cesium.Cartesian3.fromDegrees(maxLon, maxLat),
-          Cesium.Cartesian3.fromDegrees(minLon, maxLat)
-        ]
+      const boxCorners = [
+        Cesium.Cartesian3.fromDegrees(minLon, minLat),
+        Cesium.Cartesian3.fromDegrees(maxLon, minLat),
+        Cesium.Cartesian3.fromDegrees(maxLon, maxLat),
+        Cesium.Cartesian3.fromDegrees(minLon, maxLat)
+      ]
 
-        activeEntity = viewer.entities.add({
-          polygon: {
-            hierarchy: new Cesium.PolygonHierarchy(boxCorners),
-            material: Cesium.Color.BLUE.withAlpha(0.3),
-            outline: true,
-            outlineColor: Cesium.Color.WHITE,
-            outlineWidth: 2
-          }
-        })
-      }
+      previewEntity = viewer.entities.add({
+        polygon: {
+          hierarchy: new Cesium.PolygonHierarchy(boxCorners),
+          material: Cesium.Color.BLUE.withAlpha(0.2),
+          outline: true,
+          outlineColor: Cesium.Color.CYAN,
+          outlineWidth: 2,
+          heightReference: Cesium.HeightReference.CLAMP_TO_GROUND, // ← ici
+          classificationType: Cesium.ClassificationType.TERRAIN,
+        }
+      })
+      
     }
   }
 
   function finishDrawing() {
     if (drawnPoints.length < 2) {
-      console.warn('Not enough points drawn')
       stopDrawing()
       return
+    }
+     if (previewEntity) {
+      viewer.entities.remove(previewEntity)
+      previewEntity = null
     }
 
     const geometry = {
@@ -369,6 +490,11 @@ export function useCesiumViewer(props, emit) {
       geometry.geoJSON = {
         type: 'Polygon',
         coordinates: [drawnPoints.map(p => [p.longitude, p.latitude])]
+      }
+      geometry.summary = {
+        type: 'Polygon',
+        pointCount: drawnPoints.length,
+        coordinates: drawnPoints.map(p => `(${p.latitude.toFixed(5)}, ${p.longitude.toFixed(5)})`)
       }
     } else if (drawingMode === 'boundingBox') {
       const minLat = Math.min(drawnPoints[0].latitude, drawnPoints[1].latitude)
@@ -387,6 +513,10 @@ export function useCesiumViewer(props, emit) {
           [minLon, minLat]
         ]]
       }
+      geometry.summary = {
+        type: 'Bounding Box',
+        bounds: `N:${maxLat.toFixed(5)} S:${minLat.toFixed(5)} E:${maxLon.toFixed(5)} W:${minLon.toFixed(5)}`
+      }
     }
 
     console.log('→ Drawing finished:', geometry)
@@ -394,6 +524,7 @@ export function useCesiumViewer(props, emit) {
     // Emit geometry to parent component
     if (emit) {
       emit('geometry-drawn', geometry)
+      emit('drawing-active', false)
     }
 
     stopDrawing()
@@ -404,15 +535,27 @@ export function useCesiumViewer(props, emit) {
     drawingMode = null
     drawnPoints = []
 
+    pointEntities.forEach(e => viewer.entities.remove(e))
+    pointEntities = []
+
+    if (previewEntity) {
+      viewer.entities.remove(previewEntity)
+      previewEntity = null
+    }
+
     if (mouseHandler) {
       mouseHandler.removeInputAction(Cesium.ScreenSpaceEventType.LEFT_CLICK)
       mouseHandler.removeInputAction(Cesium.ScreenSpaceEventType.RIGHT_CLICK)
       mouseHandler.destroy()
       mouseHandler = null
     }
-
-    console.log('→ Drawing mode stopped')
   }
+
+  
+
+  // ========================================
+  // WMS LAYER MANAGEMENT
+  // ========================================
 
   function setupImageryProviders() {
     // Remove default imagery
@@ -425,10 +568,6 @@ export function useCesiumViewer(props, emit) {
 
     viewer.imageryLayers.addImageryProvider(cartoDBProvider)
   }
-
-  // ========================================
-  // WMS LAYER MANAGEMENT
-  // ========================================
 
   function addWmsLayer(layerConfig) {
     if (!viewer || wmsLayers.has(layerConfig.id)) return
@@ -470,9 +609,111 @@ export function useCesiumViewer(props, emit) {
 
   function updateLayerOpacity(layerId, opacity) {
     if (!wmsLayers.has(layerId)) return
-    
+
     const layer = wmsLayers.get(layerId)
     layer.alpha = opacity
+  }
+
+  // ========================================
+  // SWIPE / SPLIT LAYER MANAGEMENT
+  // ========================================
+
+  function updateSwipeConfig(enabled, position, leftLayerId, rightLayerId) {
+    if (!viewer) return
+
+    viewer.scene.splitPosition = enabled ? position : 1.0
+
+    if (!enabled) {
+      swipeActive = false
+      wmsLayers.forEach((layer, id) => {
+        layer.show = preSwipeLayerShow.has(id) ? preSwipeLayerShow.get(id) : false
+        layer.splitDirection = Cesium.SplitDirection.NONE
+      })
+      // Remove layers that were loaded exclusively for swipe
+      Array.from(preSwipeLayerShow.entries())
+        .filter(([, wasVisible]) => !wasVisible)
+        .forEach(([id]) => removeWmsLayer(id))
+      preSwipeLayerShow.clear()
+      return
+    }
+
+    // Save pre-swipe visibility on first activation
+    if (!swipeActive) {
+      swipeActive = true
+      wmsLayers.forEach((layer, id) => {
+        preSwipeLayerShow.set(id, layer.show)
+      })
+    }
+
+    // Ensure left/right layers are loaded even if not currently visible
+    for (const layerId of [leftLayerId, rightLayerId]) {
+      if (!layerId || wmsLayers.has(layerId)) continue
+      const cfg = props.layers.find(l => l.id === layerId)
+      if (cfg) {
+        addWmsLayer(cfg)
+        if (!preSwipeLayerShow.has(layerId)) preSwipeLayerShow.set(layerId, false)
+      }
+    }
+
+    // Apply split directions: only show left/right layers, hide others
+    wmsLayers.forEach((layer, id) => {
+      if (id === leftLayerId) {
+        layer.show = true
+        layer.splitDirection = Cesium.SplitDirection.LEFT
+      } else if (id === rightLayerId) {
+        layer.show = true
+        layer.splitDirection = Cesium.SplitDirection.RIGHT
+      } else {
+        layer.show = false
+        layer.splitDirection = Cesium.SplitDirection.NONE
+      }
+    })
+  }
+
+  // ========================================
+  // SUN SIMULATION
+  // ========================================
+
+  function updateSunSimulation(enabled, timeMinutes) {
+    if (!viewer) return
+
+    if (enabled) {
+      viewer.shadows = true
+      viewer.scene.globe.enableLighting = true
+      viewer.terrainShadows = Cesium.ShadowMode.RECEIVE_ONLY
+
+      if (buildingTileset) {
+        buildingTileset.shadows = Cesium.ShadowMode.ENABLED
+      }
+
+      // Set sun position via clock time (local browser time → Cesium JulianDate)
+      const now = new Date()
+      const simDate = new Date(
+        now.getFullYear(),
+        now.getMonth(),
+        now.getDate(),
+        Math.floor(timeMinutes / 60),
+        timeMinutes % 60,
+        0
+      )
+      viewer.clock.currentTime = Cesium.JulianDate.fromDate(simDate)
+      viewer.clock.shouldAnimate = false
+
+      // Shadow quality
+      viewer.shadowMap.size = 4096
+      viewer.shadowMap.softShadows = true
+      viewer.shadowMap.darkness = 0.3
+    } else {
+      viewer.shadows = false
+      viewer.scene.globe.enableLighting = false
+      viewer.terrainShadows = Cesium.ShadowMode.DISABLED
+
+      if (buildingTileset) {
+        buildingTileset.shadows = Cesium.ShadowMode.DISABLED
+      }
+
+      viewer.clock.shouldAnimate = false
+    }
   }
 
   // ========================================
@@ -517,6 +758,33 @@ export function useCesiumViewer(props, emit) {
       startDrawing(newMode)
     } else if (isDrawing) {
       stopDrawing()
+    }
+  })
+
+  // Watch swipe mode/layer changes
+  watch(
+    [() => props.swipeEnabled, () => props.swipeLeftLayerId, () => props.swipeRightLayerId],
+    ([enabled, leftId, rightId]) => {
+      updateSwipeConfig(enabled, props.swipePosition, leftId, rightId)
+    }
+  )
+
+  // Watch swipe position separately (frequent updates from drag)
+  watch(() => props.swipePosition, (position) => {
+    if (viewer && props.swipeEnabled) {
+      viewer.scene.splitPosition = position
+    }
+  })
+
+  // Watch sun simulation toggle
+  watch(() => props.sunSimEnabled, (enabled) => {
+    updateSunSimulation(enabled, props.sunSimTime)
+  })
+
+  // Watch sun simulation time (slider drag)
+  watch(() => props.sunSimTime, (timeMinutes) => {
+    if (props.sunSimEnabled) {
+      updateSunSimulation(true, timeMinutes)
     }
   })
 

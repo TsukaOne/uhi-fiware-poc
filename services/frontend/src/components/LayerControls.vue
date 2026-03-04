@@ -7,6 +7,12 @@
     </button>
     
     <div class="panel-content" v-show="!isCollapsed">
+      <!-- SWIPE MODE BANNER -->
+      <div v-if="swipeEnabled" class="swipe-mode-banner">
+        <i class="fas fa-arrows-left-right"></i>
+        <span>Swipe Mode — Select layers for each side</span>
+      </div>
+
       <!-- SECTION A: URBAN HEAT ISLANDS -->
       <div class="layer-section">
         <h3 class="section-title">
@@ -15,21 +21,38 @@
         </h3>
         <div class="layer-list">
           <div 
-            v-for="layer in getLayersByCategory('uhi_maps')" 
+            v-for="layer in getLayersByCategory('uhi_maps')"
             :key="layer.id"
             class="layer-item"
-            :class="{ active: layer.visible }"
+            :class="{ active: swipeEnabled ? (swipeLeftLayerId === layer.id || swipeRightLayerId === layer.id) : layer.visible }"
           >
             <div class="layer-header">
-              <label class="checkbox-wrapper">
-                <input 
-                  type="checkbox" 
+              <label v-if="!swipeEnabled" class="checkbox-wrapper">
+                <input
+                  type="checkbox"
                   :checked="layer.visible"
                   @change="$emit('toggle-layer', layer.id)"
                 />
                 <span class="checkmark"></span>
                 <span class="layer-name">{{ layer.name }}</span>
               </label>
+              <div v-else class="swipe-selector">
+                <span class="layer-name">{{ layer.name }}</span>
+                <div class="swipe-side-btns">
+                  <button
+                    class="swipe-side-btn left"
+                    :class="{ active: swipeLeftLayerId === layer.id }"
+                    @click="$emit('set-swipe-left', layer.id)"
+                    title="Left side"
+                  >L</button>
+                  <button
+                    class="swipe-side-btn right"
+                    :class="{ active: swipeRightLayerId === layer.id }"
+                    @click="$emit('set-swipe-right', layer.id)"
+                    title="Right side"
+                  >R</button>
+                </div>
+              </div>
             </div>
             
             <p class="layer-description">{{ layer.description }}</p>
@@ -65,21 +88,38 @@
         </h3>
         <div class="layer-list">
           <div 
-            v-for="layer in getLayersByCategory('map_layers')" 
+            v-for="layer in getLayersByCategory('map_layers')"
             :key="layer.id"
             class="layer-item"
-            :class="{ active: layer.visible }"
+            :class="{ active: swipeEnabled ? (swipeLeftLayerId === layer.id || swipeRightLayerId === layer.id) : layer.visible }"
           >
             <div class="layer-header">
-              <label class="checkbox-wrapper">
-                <input 
-                  type="checkbox" 
+              <label v-if="!swipeEnabled" class="checkbox-wrapper">
+                <input
+                  type="checkbox"
                   :checked="layer.visible"
                   @change="$emit('toggle-layer', layer.id)"
                 />
                 <span class="checkmark"></span>
                 <span class="layer-name">{{ layer.name }}</span>
               </label>
+              <div v-else class="swipe-selector">
+                <span class="layer-name">{{ layer.name }}</span>
+                <div class="swipe-side-btns">
+                  <button
+                    class="swipe-side-btn left"
+                    :class="{ active: swipeLeftLayerId === layer.id }"
+                    @click="$emit('set-swipe-left', layer.id)"
+                    title="Left side"
+                  >L</button>
+                  <button
+                    class="swipe-side-btn right"
+                    :class="{ active: swipeRightLayerId === layer.id }"
+                    @click="$emit('set-swipe-right', layer.id)"
+                    title="Right side"
+                  >R</button>
+                </div>
+              </div>
             </div>
             
             <p class="layer-description">{{ layer.description }}</p>
@@ -161,10 +201,22 @@
     buildingVisible: {
       type: Boolean,
       default: true
+    },
+    swipeEnabled: {
+      type: Boolean,
+      default: false
+    },
+    swipeLeftLayerId: {
+      type: String,
+      default: null
+    },
+    swipeRightLayerId: {
+      type: String,
+      default: null
     }
   })
 
-  defineEmits(['toggle-layer', 'set-opacity', 'toggle-buildings'])
+  defineEmits(['toggle-layer', 'set-opacity', 'toggle-buildings', 'set-swipe-left', 'set-swipe-right'])
 
 
   const { isCollapsed, getLegendStyle } = useLayerControls()

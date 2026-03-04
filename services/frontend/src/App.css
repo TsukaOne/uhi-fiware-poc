@@ -231,3 +231,484 @@
   background: rgba(22, 163, 74, 0.8);
   box-shadow: 0 0 8px rgba(22, 163, 74, 0.6);
 }
+
+.drawing-hint {
+  position: absolute;
+  bottom: 40px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: rgba(15, 20, 30, 0.92);
+  backdrop-filter: blur(10px);
+  color: #86efac;
+  padding: 10px 20px;
+  border-radius: 24px;
+  font-size: 13px;
+  font-weight: 500;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  z-index: 1800;
+  border: 1px solid rgba(22, 163, 74, 0.4);
+  box-shadow: 0 0 20px rgba(22, 163, 74, 0.15);
+  animation: fadeInUp 0.3s ease;
+  pointer-events: none;
+}
+
+.geometry-result {
+  position: absolute;
+  bottom: 40px;
+  right: 20px;
+  width: 280px;
+  background: rgba(15, 20, 30, 0.96);
+  backdrop-filter: blur(12px);
+  border-radius: 12px;
+  border: 1px solid rgba(22, 163, 74, 0.4);
+  box-shadow: 0 8px 24px rgba(0,0,0,0.5);
+  z-index: 1800;
+  overflow: hidden;
+  animation: fadeInUp 0.3s ease;
+}
+
+.geometry-result-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 12px 14px;
+  background: rgba(22, 163, 74, 0.2);
+  color: #86efac;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.geometry-result-header button {
+  background: none;
+  border: none;
+  color: rgba(255,255,255,0.5);
+  cursor: pointer;
+  font-size: 14px;
+  transition: color 0.2s;
+}
+
+.geometry-result-header button:hover { color: white; }
+
+.geometry-result-body {
+  padding: 12px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.result-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 12px;
+  color: rgba(255,255,255,0.6);
+}
+
+.result-row strong { color: white; }
+
+.result-coords {
+  font-size: 11px;
+  color: rgba(255,255,255,0.5);
+  background: rgba(255,255,255,0.05);
+  border-radius: 6px;
+  padding: 8px;
+  line-height: 1.8;
+  max-height: 120px;
+  overflow-y: auto;
+}
+
+@keyframes fadeInUp {
+  from { opacity: 0; transform: translateY(10px) translateX(-50%); }
+  to   { opacity: 1; transform: translateY(0)   translateX(-50%); }
+}
+
+/* Override pour geometry-result (pas de translateX) */
+.geometry-result { animation-name: fadeInUpRight; }
+
+@keyframes fadeInUpRight {
+  from { opacity: 0; transform: translateY(10px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+/* ========================================
+   DRAWING HINT
+   ======================================== */
+.drawing-hint {
+  position: absolute;
+  bottom: 40px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: rgba(10, 14, 22, 0.92);
+  backdrop-filter: blur(10px);
+  color: #22d3a0;
+  padding: 10px 20px;
+  border-radius: 24px;
+  font-size: 13px;
+  font-family: 'Courier New', monospace;
+  font-weight: 500;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  z-index: 1800;
+  border: 1px solid rgba(34, 211, 160, 0.35);
+  box-shadow: 0 0 24px rgba(34, 211, 160, 0.12);
+  pointer-events: none;
+  letter-spacing: 0.03em;
+  animation: hintIn 0.3s ease;
+}
+
+@keyframes hintIn {
+  from { opacity: 0; transform: translateX(-50%) translateY(8px); }
+  to   { opacity: 1; transform: translateX(-50%) translateY(0); }
+}
+
+/* ========================================
+   WORKFLOW BOTTOM BAR
+   ======================================== */
+.workflow-bar {
+  position: absolute;
+  bottom: 24px;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  background: rgba(8, 12, 20, 0.97);
+  backdrop-filter: blur(16px);
+  border: 1px solid rgba(34, 211, 160, 0.2);
+  border-radius: 16px;
+  padding: 12px 18px;
+  z-index: 1600;
+  box-shadow: 0 16px 48px rgba(0, 0, 0, 0.5), 0 0 0 1px rgba(255,255,255,0.03);
+  font-family: 'Courier New', monospace;
+  white-space: nowrap;
+}
+
+.bar-slide-enter-active,
+.bar-slide-leave-active {
+  transition: all 0.35s cubic-bezier(0.4, 0, 0.2, 1);
+}
+.bar-slide-enter-from,
+.bar-slide-leave-to {
+  opacity: 0;
+  transform: translateX(-50%) translateY(16px);
+}
+
+.workflow-step {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: rgba(255, 255, 255, 0.3);
+  transition: color 0.2s;
+}
+
+.workflow-step.active {
+  color: #22d3a0;
+}
+
+.workflow-step.done {
+  color: rgba(34, 211, 160, 0.5);
+}
+
+.wf-num {
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  border: 1px solid currentColor;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 10px;
+  font-weight: 700;
+  flex-shrink: 0;
+}
+
+.workflow-step.active .wf-num {
+  background: rgba(34, 211, 160, 0.15);
+}
+
+.workflow-step .fa-check-circle {
+  font-size: 12px;
+  color: rgba(34, 211, 160, 0.6);
+}
+
+.wf-arrow {
+  color: rgba(255,255,255,0.2);
+  font-size: 13px;
+  margin: 0 2px;
+}
+
+.wf-actions {
+  display: flex;
+  gap: 8px;
+  margin-left: 16px;
+  padding-left: 16px;
+  border-left: 1px solid rgba(255,255,255,0.08);
+}
+
+.wf-btn {
+  padding: 8px 16px;
+  border-radius: 8px;
+  font-size: 11px;
+  font-family: 'Courier New', monospace;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  cursor: pointer;
+  transition: all 0.15s;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  border: 1px solid;
+}
+
+.wf-btn.secondary {
+  background: rgba(255,255,255,0.04);
+  border-color: rgba(255,255,255,0.1);
+  color: rgba(255,255,255,0.5);
+}
+
+.wf-btn.secondary:hover {
+  background: rgba(255,255,255,0.08);
+  color: rgba(255,255,255,0.8);
+}
+
+.wf-btn.primary {
+  background: linear-gradient(135deg, rgba(34, 211, 160, 0.2), rgba(34, 211, 160, 0.12));
+  border-color: rgba(34, 211, 160, 0.5);
+  color: #22d3a0;
+}
+
+.wf-btn.primary:hover {
+  background: linear-gradient(135deg, rgba(34, 211, 160, 0.3), rgba(34, 211, 160, 0.18));
+  box-shadow: 0 0 16px rgba(34, 211, 160, 0.25);
+}
+
+/* ========================================
+   SWIPE DIVIDER
+   ======================================== */
+.swipe-divider {
+  position: absolute;
+  top: 60px;
+  bottom: 0;
+  width: 4px;
+  background: rgba(255, 255, 255, 0.5);
+  z-index: 1500;
+  transform: translateX(-50%);
+  pointer-events: none;
+  box-shadow: 0 0 8px rgba(0, 0, 0, 0.4);
+}
+
+.swipe-handle {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: 32px;
+  height: 48px;
+  background: rgba(20, 25, 35, 0.95);
+  border: 2px solid rgba(255, 255, 255, 0.5);
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: ew-resize;
+  pointer-events: all;
+  color: white;
+  font-size: 16px;
+  transition: background 0.2s, border-color 0.2s, box-shadow 0.2s;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.4);
+}
+
+.swipe-handle:hover {
+  background: rgba(22, 163, 74, 0.8);
+  border-color: #22d3a0;
+  box-shadow: 0 0 12px rgba(34, 211, 160, 0.4);
+}
+
+/* ========================================
+   SUN SIMULATION PANEL
+   ======================================== */
+.sun-sim-container {
+  position: relative;
+}
+
+.sun-sim-panel {
+  position: absolute;
+  top: 48px;
+  right: 0;
+  background: rgba(25, 30, 45, 0.98);
+  backdrop-filter: blur(12px);
+  border-radius: 12px;
+  min-width: 260px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5);
+  z-index: 2000;
+  animation: slideDown 0.2s ease;
+  overflow: hidden;
+}
+
+.sun-sim-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 12px 14px;
+  background: rgba(255, 170, 0, 0.12);
+  border-bottom: 1px solid rgba(255, 170, 0, 0.2);
+}
+
+.sun-sim-title {
+  color: #fbbf24;
+  font-size: 13px;
+  font-weight: 600;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.sun-sim-toggle {
+  position: relative;
+  width: 36px;
+  height: 20px;
+  cursor: pointer;
+  display: inline-block;
+}
+
+.sun-sim-toggle input {
+  opacity: 0;
+  width: 0;
+  height: 0;
+}
+
+.toggle-slider {
+  position: absolute;
+  inset: 0;
+  background: rgba(255, 255, 255, 0.15);
+  border-radius: 10px;
+  transition: background 0.2s;
+}
+
+.toggle-slider::before {
+  content: '';
+  position: absolute;
+  width: 16px;
+  height: 16px;
+  left: 2px;
+  bottom: 2px;
+  background: white;
+  border-radius: 50%;
+  transition: transform 0.2s;
+}
+
+.sun-sim-toggle input:checked + .toggle-slider {
+  background: #f59e0b;
+}
+
+.sun-sim-toggle input:checked + .toggle-slider::before {
+  transform: translateX(16px);
+}
+
+.sun-sim-body {
+  padding: 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  transition: opacity 0.2s;
+}
+
+.sun-sim-body.disabled {
+  opacity: 0.35;
+  pointer-events: none;
+}
+
+.sun-sim-time-display {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  font-size: 22px;
+  font-weight: 700;
+  color: #fbbf24;
+  font-family: 'Courier New', monospace;
+  letter-spacing: 0.1em;
+}
+
+.sun-sim-time-display i {
+  font-size: 14px;
+  color: rgba(251, 191, 36, 0.6);
+}
+
+.sun-sim-slider-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.slider-label {
+  font-size: 10px;
+  color: rgba(255, 255, 255, 0.4);
+  min-width: 32px;
+  text-align: center;
+}
+
+.sun-sim-slider {
+  flex: 1;
+  -webkit-appearance: none;
+  appearance: none;
+  height: 4px;
+  background: rgba(255, 255, 255, 0.15);
+  border-radius: 2px;
+  outline: none;
+}
+
+.sun-sim-slider::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 16px;
+  height: 16px;
+  background: #f59e0b;
+  border-radius: 50%;
+  cursor: pointer;
+  box-shadow: 0 0 8px rgba(245, 158, 11, 0.5);
+}
+
+.sun-sim-slider::-moz-range-thumb {
+  width: 16px;
+  height: 16px;
+  background: #f59e0b;
+  border-radius: 50%;
+  cursor: pointer;
+  border: none;
+  box-shadow: 0 0 8px rgba(245, 158, 11, 0.5);
+}
+
+.sun-sim-presets {
+  display: flex;
+  gap: 6px;
+  justify-content: center;
+}
+
+.sun-sim-presets button {
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 6px;
+  color: rgba(255, 255, 255, 0.6);
+  padding: 4px 10px;
+  font-size: 11px;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.sun-sim-presets button:hover:not(:disabled) {
+  background: rgba(245, 158, 11, 0.2);
+  border-color: rgba(245, 158, 11, 0.5);
+  color: #fbbf24;
+}
+
+.sun-sim-presets button:disabled {
+  opacity: 0.3;
+  cursor: not-allowed;
+}

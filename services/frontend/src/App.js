@@ -7,8 +7,10 @@ import { ref, reactive } from 'vue'
 export function useAppState() {
   // Navbar state
   const viewMode = ref('3D')
-  const showLayers = ref(true)
+  const showLayers = ref(false)
   const showToolbox = ref(false)
+
+  
 
   // 3D Tileset state
   const buildingVisible = ref(true)
@@ -17,6 +19,16 @@ export function useAppState() {
   const drawingMode = ref(null) // 'polygon' | 'boundingBox' | null
   const showPredictMenu = ref(false)
   const drawnGeometries = ref([])
+
+  // Swipe state
+  const swipeEnabled = ref(false)
+  const swipeLeftLayerId = ref(null)
+  const swipeRightLayerId = ref(null)
+  const swipePosition = ref(0.5)
+
+  // Sun Simulation state
+  const sunSimEnabled = ref(false)
+  const sunSimTime = ref(720) // minutes since midnight, default = 12:00 noon
 
   // WMS layer definitions organized into categories
   const layers = reactive([
@@ -65,7 +77,7 @@ export function useAppState() {
       name: 'NDVI',
       description: 'Vegetation Index (-1 to 1)',
       wmsLayer: 'uhi:ndvi',
-      visible: true,
+      visible: false,
       opacity: 0.7,
       category: 'map_layers',
       legend: {
@@ -187,6 +199,34 @@ export function useAppState() {
     drawnGeometries.value = []
   }
 
+  // ========================================
+  // SWIPE HANDLERS
+  // ========================================
+
+  function toggleSwipe() {
+    swipeEnabled.value = !swipeEnabled.value
+    if (!swipeEnabled.value) {
+      swipeLeftLayerId.value = null
+      swipeRightLayerId.value = null
+      swipePosition.value = 0.5
+    }
+  }
+
+  // ========================================
+  // SUN SIMULATION HANDLERS
+  // ========================================
+
+  function toggleSunSim() {
+    sunSimEnabled.value = !sunSimEnabled.value
+    if (!sunSimEnabled.value) {
+      sunSimTime.value = 720
+    }
+  }
+
+  function setSunSimTime(minutes) {
+    sunSimTime.value = minutes
+  }
+
   return {
     viewMode,
     showLayers,
@@ -209,6 +249,15 @@ export function useAppState() {
     startDrawingBoundingBox,
     stopDrawing,
     addGeometry,
-    clearGeometries
+    clearGeometries,
+    swipeEnabled,
+    swipeLeftLayerId,
+    swipeRightLayerId,
+    swipePosition,
+    toggleSwipe,
+    sunSimEnabled,
+    sunSimTime,
+    toggleSunSim,
+    setSunSimTime
   }
 }
