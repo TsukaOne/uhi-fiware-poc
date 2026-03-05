@@ -705,8 +705,9 @@ export function useCesiumViewer(props, emit) {
 
   function updateSunSimulation(enabled, timeMinutes) {
     if (!viewer) return
-
+    
     if (enabled) {
+      console.log('→ SunSim enabled, updating sun position and shadows')
       viewer.shadows = true
       viewer.scene.globe.enableLighting = true
       viewer.terrainShadows = Cesium.ShadowMode.RECEIVE_ONLY
@@ -732,16 +733,31 @@ export function useCesiumViewer(props, emit) {
       viewer.shadowMap.size = 2048
       viewer.shadowMap.softShadows = true
       viewer.shadowMap.darkness = 0.3
+      triggerCameraFly()
     } else {
       viewer.shadows = false
       viewer.scene.globe.enableLighting = false
       viewer.terrainShadows = Cesium.ShadowMode.DISABLED
-
+      triggerCameraFly()
       if (buildingTileset) {
         buildingTileset.shadows = Cesium.ShadowMode.DISABLED
       }
 
       viewer.clock.shouldAnimate = false
+    }
+  }
+  
+  function triggerCameraFly() {
+    if (viewer) {
+      viewer.camera.flyTo({
+        destination: viewer.camera.position,
+        orientation: {
+          heading: viewer.camera.heading,
+          pitch: viewer.camera.pitch + 0.001,
+          roll: 0
+        },
+        duration: 0.01
+      })
     }
   }
 
@@ -835,11 +851,12 @@ export function useCesiumViewer(props, emit) {
   watch(() => props.swipePosition, (position) => {
     if (viewer && props.swipeEnabled) {
       viewer.scene.splitPosition = position
+      viewer.scene.requestRender()
     }
   })
 
   // Watch sun simulation toggle
-  watch(() => props.sunSimEnabled, (enabled) => {
+  watch(() => props.sunSimEnabled, (enabled) => { 
     updateSunSimulation(enabled, props.sunSimTime)
   })
 

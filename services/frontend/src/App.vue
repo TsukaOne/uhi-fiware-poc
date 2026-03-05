@@ -112,7 +112,7 @@
         <button
           class="tool-btn"
           title="Sun Simulation"
-          @click="showSunSimPanel = !showSunSimPanel"
+          @click.stop="handleSunSimClick"
           :class="{ active: sunSimEnabled }"
         >
           <i class="fas fa-sun"></i>
@@ -124,17 +124,9 @@
             <span class="sun-sim-title">
               <i class="fas fa-sun"></i> Sun Simulation
             </span>
-            <label class="sun-sim-toggle">
-              <input
-                type="checkbox"
-                :checked="sunSimEnabled"
-                @change="toggleSunSim"
-              />
-              <span class="toggle-slider"></span>
-            </label>
           </div>
 
-          <div class="sun-sim-body" :class="{ disabled: !sunSimEnabled }">
+          <div class="sun-sim-body">
             <div class="sun-sim-time-display">
               <i class="fas fa-clock"></i>
               <span>{{ sunSimTimeFormatted }}</span>
@@ -149,18 +141,17 @@
                 step="15"
                 :value="sunSimTime"
                 @input="setSunSimTime(Number($event.target.value))"
-                :disabled="!sunSimEnabled"
                 class="sun-sim-slider"
               />
               <span class="slider-label">24:00</span>
             </div>
 
             <div class="sun-sim-presets">
-              <button @click="setSunSimTime(360)" :disabled="!sunSimEnabled">06:00</button>
-              <button @click="setSunSimTime(540)" :disabled="!sunSimEnabled">09:00</button>
-              <button @click="setSunSimTime(720)" :disabled="!sunSimEnabled">12:00</button>
-              <button @click="setSunSimTime(900)" :disabled="!sunSimEnabled">15:00</button>
-              <button @click="setSunSimTime(1080)" :disabled="!sunSimEnabled">18:00</button>
+              <button @click="setSunSimTime(360)">06:00</button>
+              <button @click="setSunSimTime(540)">09:00</button>
+              <button @click="setSunSimTime(720)">12:00</button>
+              <button @click="setSunSimTime(900)">15:00</button>
+              <button @click="setSunSimTime(1080)">18:00</button>
             </div>
           </div>
         </div>
@@ -406,6 +397,12 @@
   // SUN SIMULATION (local UI)
   // ========================================
   const showSunSimPanel = ref(false)
+
+  function handleSunSimClick() {
+    const wasEnabled = sunSimEnabled.value
+    toggleSunSim()
+    showSunSimPanel.value = !wasEnabled
+  }
 
   const sunSimTimeFormatted = computed(() => {
     const hours = Math.floor(sunSimTime.value / 60)
