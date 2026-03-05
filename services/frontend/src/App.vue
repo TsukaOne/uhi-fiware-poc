@@ -243,6 +243,7 @@
       :activeLayers="activeLayers"
       :viewMode="viewMode"
       :buildingVisible="buildingVisible"
+      :treeVisible="treeVisible"
       :drawingMode="drawingMode"
       :swipeEnabled="swipeEnabled"
       :swipePosition="swipePosition"
@@ -271,12 +272,14 @@
       :layers="layers"
       :activeLayers="activeLayers"
       :buildingVisible="buildingVisible"
+      :treeVisible="treeVisible"
       :swipeEnabled="swipeEnabled"
       :swipeLeftLayerId="swipeLeftLayerId"
       :swipeRightLayerId="swipeRightLayerId"
       @toggle-layer="toggleLayer"
       @set-opacity="setOpacity"
       @toggle-buildings="toggleBuildings"
+      @toggle-trees="toggleTrees"
       @set-swipe-left="onSetSwipeLeft"
       @set-swipe-right="onSetSwipeRight"
     />
@@ -291,10 +294,10 @@
   import SelectionOverlay from './components/SelectionOverlay.vue'
   import PredictionPanel from './components/PredictionPanel.vue'
   const {
-    viewMode, showLayers, layers, activeLayers, buildingVisible,
+    viewMode, showLayers, layers, activeLayers, buildingVisible, treeVisible,
     showToolbox, drawingMode, showPredictMenu, drawnGeometries,
     set2D, set3D, toggleLayersPanel, toggleLayer, setOpacity,
-    toggleBuildings, toggleToolbox, togglePredictMenu,
+    toggleBuildings, toggleTrees, toggleToolbox, togglePredictMenu,
     startDrawingPolygon, startDrawingBoundingBox, stopDrawing, addGeometry,
     swipeEnabled, swipeLeftLayerId, swipeRightLayerId, swipePosition, toggleSwipe,
     sunSimEnabled, sunSimTime, toggleSunSim, setSunSimTime

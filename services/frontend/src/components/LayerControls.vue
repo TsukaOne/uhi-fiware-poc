@@ -168,6 +168,20 @@
             </div>
             <p class="layer-description">Interactive 3D building models snapped to terrain</p>
           </div>
+          <div class="layer-item" :class="{ active: treeVisible }">
+            <div class="layer-header">
+              <label class="checkbox-wrapper">
+                <input 
+                  type="checkbox" 
+                  :checked="treeVisible"
+                  @change="$emit('toggle-trees')"
+                />
+                <span class="checkmark"></span>
+                <span class="layer-name">Trees 3D</span>
+              </label>
+            </div>
+            <p class="layer-description">Interactive 3D trees snapped to terrain</p>
+          </div>
         </div>
       </div>
 
@@ -202,6 +216,10 @@
       type: Boolean,
       default: true
     },
+    treeVisible: {
+      type: Boolean,
+      default: false
+    },
     swipeEnabled: {
       type: Boolean,
       default: false
@@ -216,7 +234,7 @@
     }
   })
 
-  defineEmits(['toggle-layer', 'set-opacity', 'toggle-buildings', 'set-swipe-left', 'set-swipe-right'])
+  defineEmits(['toggle-layer', 'set-opacity', 'toggle-buildings', 'toggle-trees', 'set-swipe-left', 'set-swipe-right'])
 
 
   const { isCollapsed, getLegendStyle } = useLayerControls()

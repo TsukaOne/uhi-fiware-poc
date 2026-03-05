@@ -10,6 +10,7 @@
     activeLayers: { type: Array, default: () => [] },
     viewMode: { type: String, required: true },
     buildingVisible: { type: Boolean, default: true },
+    treeVisible: { type: Boolean, default: false },
     drawingMode: { type: String, default: null },
     swipeEnabled: { type: Boolean, default: false },
     swipePosition: { type: Number, default: 0.5 },

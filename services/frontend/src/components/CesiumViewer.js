@@ -8,6 +8,7 @@ import * as Cesium from 'cesium'
 const cesiumContainer = ref(null)
 let viewer = null
 let buildingTileset = null
+let TreeTileset = null
 let terrainProvider = null
 const wmsLayers = new Map()
 
@@ -122,10 +123,15 @@ export function useCesiumViewer(props, emit) {
     try {
       // Load 3D tileset from Cesium ion asset
       buildingTileset = await Cesium.Cesium3DTileset.fromIonAssetId(3474524)
+
+      TreeTileset = await Cesium.Cesium3DTileset.fromUrl(
+        "https://digitaltwin.s3.gra.io.cloud.ovh.net/tilesets_manager/3dtiles_vegetation_ds4/tileset.json"
+      );  
       
       // Add to scene (visible by default for 3D mode)
       viewer.scene.primitives.add(buildingTileset)
-      
+      viewer.scene.primitives.add(TreeTileset)
+      TreeTileset.show = false
       // Sample terrain at Brussels center to ensure tileset sits on ground
       try {
         // Convert Brussels center to Cesium Cartesian
@@ -146,6 +152,7 @@ export function useCesiumViewer(props, emit) {
       
       // Enable depth testing on tileset for proper occlusion
       buildingTileset.depthFailMaterial = Cesium.Color.TRANSPARENT
+      TreeTileset.depthFailMaterial = Cesium.Color.TRANSPARENT
       
     } catch (error) {
     }
@@ -255,6 +262,9 @@ export function useCesiumViewer(props, emit) {
         // Keep buildings hidden in 2D mode for a cleaner cartographic view
         if (buildingTileset) {
           buildingTileset.show = false
+        }
+        if (TreeTileset) {
+          TreeTileset.show = false
         }
         
         // Keep fog disabled for clear cartographic view
@@ -730,6 +740,14 @@ export function useCesiumViewer(props, emit) {
     if (buildingTileset) {
       buildingTileset.show = isVisible
       console.log(`→ Buildings ${isVisible ? 'shown' : 'hidden'}`)
+    }
+  })
+
+  // Watch tree visibility
+  watch(() => props.treeVisible, (isVisible) => {
+    if (TreeTileset) {
+      TreeTileset.show = isVisible
+      console.log(`→ Trees ${isVisible ? 'shown' : 'hidden'}`)
     }
   })
 

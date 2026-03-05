@@ -14,6 +14,7 @@ export function useAppState() {
 
   // 3D Tileset state
   const buildingVisible = ref(true)
+  const treeVisible = ref(false)
 
   // Drawing state
   const drawingMode = ref(null) // 'polygon' | 'boundingBox' | null
@@ -160,6 +161,10 @@ export function useAppState() {
     buildingVisible.value = !buildingVisible.value
   }
 
+  function toggleTrees() {
+    treeVisible.value = !treeVisible.value
+  }
+
   // ========================================
   // TOOL BOX  HANDLERS
   // ========================================
@@ -234,6 +239,7 @@ export function useAppState() {
     layers,
     activeLayers,
     buildingVisible,
+    treeVisible,
     drawingMode,
     showPredictMenu,
     drawnGeometries,
@@ -243,6 +249,7 @@ export function useAppState() {
     toggleLayer,
     setOpacity,
     toggleBuildings,
+    toggleTrees,
     toggleToolbox,
     togglePredictMenu,
     startDrawingPolygon,
