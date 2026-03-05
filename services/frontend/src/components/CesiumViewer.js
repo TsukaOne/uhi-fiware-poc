@@ -9,6 +9,7 @@ const cesiumContainer = ref(null)
 let viewer = null
 let buildingTileset = null
 let TreeTileset = null
+let treeLoaded = false
 let terrainProvider = null
 const wmsLayers = new Map()
 
@@ -79,13 +80,20 @@ export function useCesiumViewer(props, emit) {
     })
 
     // ========================================
+    // RENDER ON DEMAND: only render when scene changes, not every frame
+    // ========================================
+    viewer.scene.requestRenderMode = true
+    viewer.scene.maximumRenderTimeChange = 0.0
+
+    // ========================================
     // TERRAIN INITIALIZATION (LOAD ONCE)
     // ========================================
     try {
       // Load Cesium World Terrain for ground-accurate building placement
+      // requestVertexNormals/requestWaterMask disabled for performance (not needed without lighting)
       terrainProvider = await Cesium.createWorldTerrainAsync({
-        requestWaterMask: true,
-        requestVertexNormals: true
+        requestWaterMask: false,
+        requestVertexNormals: false
       })
       viewer.terrainProvider = terrainProvider
     } catch (error) {
@@ -123,39 +131,50 @@ export function useCesiumViewer(props, emit) {
     try {
       // Load 3D tileset from Cesium ion asset
       buildingTileset = await Cesium.Cesium3DTileset.fromIonAssetId(3474524)
-
-      TreeTileset = await Cesium.Cesium3DTileset.fromUrl(
-        "https://digitaltwin.s3.gra.io.cloud.ovh.net/tilesets_manager/3dtiles_vegetation_ds4/tileset.json"
-      );  
-      
-      // Add to scene (visible by default for 3D mode)
       viewer.scene.primitives.add(buildingTileset)
-      viewer.scene.primitives.add(TreeTileset)
-      TreeTileset.show = false
-      // Sample terrain at Brussels center to ensure tileset sits on ground
-      try {
-        // Convert Brussels center to Cesium Cartesian
-        const bruxellesCartesian = Cesium.Cartesian3.fromDegrees(
-          BRUSSELS_CENTER.longitude,
-          BRUSSELS_CENTER.latitude
-        )
-        const bruxellesCartographic = Cesium.Cartographic.fromCartesian(bruxellesCartesian)
-        
-        // Sample terrain height at specific point
-        const sampledPositions = await Cesium.sampleTerrainMostDetailed(
-          terrainProvider,
-          [bruxellesCartographic]
-        )
-      } catch (error) {
-        console.warn('Terrain height sampling fallback:', error)
-      }
-      
-      // Enable depth testing on tileset for proper occlusion
+
+      // Performance: SSE, foveated rendering, cache limits
+      buildingTileset.maximumScreenSpaceError = 32
+      buildingTileset.foveatedScreenSpaceError = true
+      buildingTileset.foveatedConeSize = 0.15
+      buildingTileset.foveatedTimeDelay = 0.2
+      buildingTileset.cacheBytes = 256 * 1024 * 1024
+      buildingTileset.maximumCacheOverflowBytes = 128 * 1024 * 1024
       buildingTileset.depthFailMaterial = Cesium.Color.TRANSPARENT
-      TreeTileset.depthFailMaterial = Cesium.Color.TRANSPARENT
+
+      // dynamicScreenSpaceError: reduces quality for distant tiles automatically
+      buildingTileset.dynamicScreenSpaceError = true
+      buildingTileset.dynamicScreenSpaceErrorDensity = 0.00278
+      buildingTileset.dynamicScreenSpaceErrorFactor = 4.0
+      buildingTileset.dynamicScreenSpaceErrorHeightFalloff = 0.25
+
+      // skipLevelOfDetail: jump directly to the right LOD, skipping intermediates
+      buildingTileset.skipLevelOfDetail = true
+      buildingTileset.baseScreenSpaceError = 1024
+      buildingTileset.skipScreenSpaceErrorFactor = 16
+      buildingTileset.skipLevels = 1
+      buildingTileset.immediatelyLoadDesiredLevelOfDetail = false
+
+      // Aggressively cull tile requests while moving
+      buildingTileset.cullRequestsWhileMoving = true
+      buildingTileset.cullRequestsWhileMovingMultiplier = 60
+
+      // TreeTileset: lazy-loaded on first user toggle (see watch treeVisible)
       
     } catch (error) {
     }
+
+    // ========================================
+    // DYNAMIC SSE: lower quality during movement, full quality when still
+    // ========================================
+    viewer.camera.moveStart.addEventListener(() => {
+      if (buildingTileset) buildingTileset.maximumScreenSpaceError = 64
+      if (TreeTileset) TreeTileset.maximumScreenSpaceError = 96
+    })
+    viewer.camera.moveEnd.addEventListener(() => {
+      if (buildingTileset) buildingTileset.maximumScreenSpaceError = 32
+      if (TreeTileset) TreeTileset.maximumScreenSpaceError = 48
+    })
 
     // ========================================
     // INIT INITIAL WMS LAYERS
@@ -710,7 +729,7 @@ export function useCesiumViewer(props, emit) {
       viewer.clock.shouldAnimate = false
 
       // Shadow quality
-      viewer.shadowMap.size = 4096
+      viewer.shadowMap.size = 2048
       viewer.shadowMap.softShadows = true
       viewer.shadowMap.darkness = 0.3
     } else {
@@ -743,11 +762,36 @@ export function useCesiumViewer(props, emit) {
     }
   })
 
-  // Watch tree visibility
-  watch(() => props.treeVisible, (isVisible) => {
-    if (TreeTileset) {
+  // Watch tree visibility — lazy-load on first activation
+  watch(() => props.treeVisible, async (isVisible) => {
+    if (isVisible && !treeLoaded) {
+      try {
+        TreeTileset = await Cesium.Cesium3DTileset.fromUrl(
+          "https://digitaltwin.s3.gra.io.cloud.ovh.net/tilesets_manager/3dtiles_vegetation_ds4/tileset.json"
+        )
+        TreeTileset.maximumScreenSpaceError = 48
+        TreeTileset.foveatedScreenSpaceError = true
+        TreeTileset.foveatedConeSize = 0.15
+        TreeTileset.foveatedTimeDelay = 0.2
+        TreeTileset.cacheBytes = 128 * 1024 * 1024
+        TreeTileset.depthFailMaterial = Cesium.Color.TRANSPARENT
+        TreeTileset.dynamicScreenSpaceError = true
+        TreeTileset.dynamicScreenSpaceErrorDensity = 0.00278
+        TreeTileset.dynamicScreenSpaceErrorFactor = 4.0
+        TreeTileset.dynamicScreenSpaceErrorHeightFalloff = 0.25
+        TreeTileset.skipLevelOfDetail = true
+        TreeTileset.baseScreenSpaceError = 1024
+        TreeTileset.skipScreenSpaceErrorFactor = 16
+        TreeTileset.skipLevels = 1
+        TreeTileset.cullRequestsWhileMoving = true
+        TreeTileset.cullRequestsWhileMovingMultiplier = 60
+        viewer.scene.primitives.add(TreeTileset)
+        treeLoaded = true
+      } catch (error) {
+        console.warn('Failed to load tree tileset:', error)
+      }
+    } else if (TreeTileset) {
       TreeTileset.show = isVisible
-      console.log(`→ Trees ${isVisible ? 'shown' : 'hidden'}`)
     }
   })
 
