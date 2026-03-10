@@ -170,6 +170,7 @@
       :visible="showSelectionOverlay"
       :geometry="activeGeometry"
       :cesiumViewer="cesiumViewerInstance"
+      :viewMode="viewMode"
     />
 
     <!-- ======================================== -->
@@ -216,6 +217,26 @@
         </div>
       </div>
     </Transition>
+
+    <!-- ======================================== -->
+    <!-- ZONE OBJECTS PANEL (drag & drop 3D)     -->
+    <!-- ======================================== -->
+    <ZoneObjectsPanel
+      :visible="showZoneObjectsPanel"
+      :geometry="activeGeometry"
+      :cesiumViewer="cesiumViewerInstance"
+      @close="showZoneObjectsPanel = false"
+      @objects-changed="onZoneObjectsChanged"
+    />
+
+    <!-- ======================================== -->
+    <!-- ZONE INFO PANEL (right side, zone data) -->
+    <!-- ======================================== -->
+    <ZoneInfoPanel
+      :visible="showZoneInfoPanel"
+      :geometry="activeGeometry"
+      @close="showZoneInfoPanel = false"
+    />
 
     <!-- ======================================== -->
     <!-- STEP 3 : PREDICTION PANEL (slide-in)    -->
@@ -284,6 +305,8 @@
   import { ref, computed, watch, onMounted, onBeforeUnmount } from 'vue'
   import SelectionOverlay from './components/SelectionOverlay.vue'
   import PredictionPanel from './components/PredictionPanel.vue'
+  import ZoneObjectsPanel from './components/ZoneObjectsPanel.vue'
+  import ZoneInfoPanel from './components/ZoneInfoPanel.vue'
   const {
     viewMode, showLayers, layers, activeLayers, buildingVisible, treeVisible,
     showToolbox, drawingMode, showPredictMenu, drawnGeometries,
@@ -423,6 +446,9 @@
   const showWorkflowBar = ref(false)      // bottom bar guiding user
   const showPredictionPanel = ref(false)  // Params panel
   const workflowStep = ref(0)             // 0=none, 1=preview, 2=params
+  const showZoneObjectsPanel = ref(false) // Zone objects drag-and-drop panel
+  const showZoneInfoPanel = ref(false)    // Zone info/data panel (right side)
+  const zoneObjects = ref([])             // placed 3D objects
 
 
   function onGeometryDrawn(geometry) {
@@ -432,18 +458,23 @@
     showSelectionOverlay.value = true
     showWorkflowBar.value = true
     workflowStep.value = 1
+    // Auto-open side panels
+    showZoneObjectsPanel.value = true
+    showZoneInfoPanel.value = true
   }
 
-  // User confirmed preview → open prediction panel
+  // User confirmed preview → open prediction panel, hide info panel
   function confirmPreviewAndOpenPanel() {
     workflowStep.value = 2
     showPredictionPanel.value = true
+    showZoneInfoPanel.value = false
   }
 
   // Back from panel to preview step
   function backToPreview() {
     workflowStep.value = 1
     showPredictionPanel.value = false
+    showZoneInfoPanel.value = true
   }
   // Close prediction panel
   function closePredictionPanel() {
@@ -455,8 +486,15 @@
     showSelectionOverlay.value = false
     showWorkflowBar.value = false
     showPredictionPanel.value = false
+    showZoneObjectsPanel.value = false
+    showZoneInfoPanel.value = false
     workflowStep.value = 0
     activeGeometry.value = null
+    zoneObjects.value = []
+  }
+
+  function onZoneObjectsChanged(objects) {
+    zoneObjects.value = objects
   }
 
   // Called when prediction panel emits 'predict'
