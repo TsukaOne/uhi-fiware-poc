@@ -22,7 +22,7 @@ from processors.building_height import process_building_heights
 from processors.cog import build_overviews
 from fiware.client import OrionClient, GeoSpatialLayer
 from processors.get_dtm import download_wcs_raster
-
+from processors.lst import process_lst
 # Configure logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -278,24 +278,28 @@ async def run_ingestion_pipeline(rgb_url: str, nir_url: str, dtm_url: str, build
         logger.info(f"Downloading DTM via WCS")
         dtm_path = await download_dtm_wcs(dtm_url, DATA_RAW_PATH)
         
+        # LST: use pre-existing raw file if available (no WCS source configured yet)
+        lst_path = DATA_PROCESSED_PATH / "lst.tif"
+        logger.info(f"Checking for LST raw file at: {lst_path}")
+        lst_available = lst_path.exists()
+        if not lst_available:
+            logger.warning(f"LST raw file not found at {lst_path}, LST layer will be skipped")
+
         if not rgb_path or not nir_path:
             raise Exception("Failed to download orthophotos")
-        
+
         if not dtm_path:
             raise Exception("Failed to download DTM")
-        
+
         if not building_and_engineering_works_path:
             raise Exception("Failed to download buildings and engineering data")
         
-
-        
         # Use raw files directly (no copying to save disk space and memory)
-        # The raw files are 6GB+ each, so we process directly from them
-        rgb_processed = rgb_path  # Keep reference to raw file
-        nir_processed = nir_path  # Keep reference to raw file
-        dtm_processed = dtm_path  # Keep reference to raw file
-        building_and_engineering_works_processed = building_and_engineering_works_path  # Keep reference to raw file
-        
+        rgb_processed = rgb_path
+        nir_processed = nir_path
+        dtm_processed = dtm_path
+        building_and_engineering_works_processed = building_and_engineering_works_path
+
         logger.info(f"Using RGB directly from: {rgb_processed}")
         logger.info(f"Using NIR directly from: {nir_processed}")
         logger.info(f"Using DTM directly from: {dtm_processed}")
@@ -311,7 +315,7 @@ async def run_ingestion_pipeline(rgb_url: str, nir_url: str, dtm_url: str, build
         
         ingestion_status["progress"] = "Building DTM overviews for fast WMS serving..."
         await asyncio.to_thread(build_overviews, str(dtm_processed))
-        
+
         # Step 2: Calculate NDVI (using windowed processing for large files)
         ingestion_status["progress"] = "Calculating NDVI (windowed processing)..."
         ndvi_path = DATA_PROCESSED_PATH / "ndvi_brussels_2024.tif"
@@ -359,8 +363,19 @@ async def run_ingestion_pipeline(rgb_url: str, nir_url: str, dtm_url: str, build
             str(building_height_path),
             "BuildingFaces"
         )
-        lst_path = DATA_PROCESSED_PATH / "lst.tif"
-        
+
+        # Step 6: Calculate LST (Land Surface Temperature) — only if raw file exists
+        lst_cog_path = DATA_PROCESSED_PATH / "lst_cog_2024.tif"
+        logger.info(f"Checking for LST COG at: {lst_cog_path}")
+        if lst_available:
+            ingestion_status["progress"] = "Calculating LST (Land Surface Temperature)..."
+            logger.info("Calculating LST (Land Surface Temperature)...")
+            await run_if_missing(
+                lst_cog_path,
+                process_lst,
+                str(lst_path),
+                str(lst_cog_path)
+            )
         # Step 6: Register layers in Orion
         ingestion_status["progress"] = "Registering layers in Orion..."
         
@@ -407,12 +422,14 @@ async def run_ingestion_pipeline(rgb_url: str, nir_url: str, dtm_url: str, build
                 file_path=str(building_height_path),
                 resolution= 40
             ),
-            GeoSpatialLayer(
-                layer_type="LST",
-                name="LST Brussels 2024",
-                spectral_range="temperature",
-                file_path=str(lst_path),
-                resolution= 40
+            *(
+                [GeoSpatialLayer(
+                    layer_type="LST",
+                    name="LST Brussels 2024",
+                    spectral_range="temperature",
+                    file_path=str(lst_cog_path),
+                    resolution=40
+                )] if lst_available and lst_cog_path.exists() else []
             )
         ]
         

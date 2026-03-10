@@ -34,7 +34,7 @@ export function useAppState() {
   // WMS layer definitions organized into categories
   const layers = reactive([
     // ========================================
-    // SECTION A: URBAN HEAT ISLANDS MAPS
+    // SECTION A: URBAN HEAT ISLANDS MAPS 
     // ========================================
     {
       id: 'uhi_prediction',
@@ -110,6 +110,19 @@ export function useAppState() {
       legend: {
         min: { value: 0, color: '#000000', label: 'Altitude 0' },
         max: { value: 129, color: '#ffffff', label: 'Altitude Max' }
+      }
+    },
+    {
+      id: 'lst',
+      name: 'LST',
+      description: 'Land Surface Temperature',
+      wmsLayer: 'uhi:lst',
+      visible: false,
+      opacity: 0.7,
+      category: 'map_layers',
+      legend: {
+        min: { value: 0, color: '#000000', label: 'Temperature 0' },
+        max: { value: 254, color: '#ffffff', label: 'Temperature Max' }
       }
     }
   ])
