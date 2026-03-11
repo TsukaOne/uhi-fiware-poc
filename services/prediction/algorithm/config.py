@@ -57,6 +57,22 @@ class Settings(BaseSettings):
         default="urn:ngsi-ld:GeoSpatialLayer:LST:brussels:2024",
         alias="LST_ENTITY_ID",
     )
+    dsm_entity_id: str = Field(
+        default="urn:ngsi-ld:GeoSpatialLayer:DSM:brussels:2024",
+        alias="DSM_ENTITY_ID",
+    )
+    imperviousness_entity_id: str = Field(
+        default="urn:ngsi-ld:GeoSpatialLayer:Imperviousness:brussels:2024",
+        alias="IMPERVIOUSNESS_ENTITY_ID",
+    )
+    ndbi_entity_id: str = Field(
+        default="urn:ngsi-ld:GeoSpatialLayer:NDBI:brussels:2024",
+        alias="NDBI_ENTITY_ID",
+    )
+    albedo_entity_id: str = Field(
+        default="urn:ngsi-ld:GeoSpatialLayer:Albedo:brussels:2024",
+        alias="ALBEDO_ENTITY_ID",
+    )
 
     # ── Rural reference point (row, col) for LST baseline ─────────────
     rural_point_row: int = Field(default=15561, alias="RURAL_POINT_ROW")
@@ -75,12 +91,16 @@ class Settings(BaseSettings):
 
     @property
     def all_layer_entity_ids(self) -> dict[str, str]:
-        """Mapping layer_name → entity_id for all five training layers."""
+        """Mapping layer_name → entity_id for all training layers."""
         return {
             "ndvi": self.ndvi_entity_id,
             "ndwi": self.ndwi_entity_id,
+            "ndbi": self.ndbi_entity_id,
             "dtm": self.dtm_entity_id,
+            "dsm": self.dsm_entity_id,
             "building_height": self.building_height_entity_id,
+            "imperviousness": self.imperviousness_entity_id,
+            "albedo": self.albedo_entity_id,
             "lst": self.lst_entity_id,
         }
 

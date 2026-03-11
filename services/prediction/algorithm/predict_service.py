@@ -28,6 +28,7 @@ from rasterio.enums import Resampling
 from rasterio.warp import reproject, transform_bounds
 from rasterio.windows import Window
 from concurrent.futures import ThreadPoolExecutor, as_completed
+from scipy.ndimage import distance_transform_edt
 
 # ---------------------------------------------------------------------------
 # These constants are already defined in main.py — import them from there
@@ -43,8 +44,12 @@ OUTPUT_PATH = Path(os.getenv("DATA_PROCESSED_PATH", "/data/processed"))
 
 NDVI_ENTITY_ID            = os.getenv("NDVI_ENTITY_ID",            "urn:ngsi-ld:GeoSpatialLayer:NDVI:brussels:2024")
 NDWI_ENTITY_ID            = os.getenv("NDWI_ENTITY_ID",            "urn:ngsi-ld:GeoSpatialLayer:NDWI:brussels:2024")
+NDBI_ENTITY_ID            = os.getenv("NDBI_ENTITY_ID",            "urn:ngsi-ld:GeoSpatialLayer:NDBI:brussels:2024")
 DTM_ENTITY_ID             = os.getenv("DTM_ENTITY_ID",             "urn:ngsi-ld:GeoSpatialLayer:DTM:brussels:2024")
+DSM_ENTITY_ID             = os.getenv("DSM_ENTITY_ID",             "urn:ngsi-ld:GeoSpatialLayer:DSM:brussels:2024")
 BUILDING_HEIGHT_ENTITY_ID = os.getenv("BUILDING_HEIGHT_ENTITY_ID", "urn:ngsi-ld:GeoSpatialLayer:BuildingHeight:brussels:2024")
+IMPERVIOUSNESS_ENTITY_ID  = os.getenv("IMPERVIOUSNESS_ENTITY_ID",  "urn:ngsi-ld:GeoSpatialLayer:Imperviousness:brussels:2024")
+ALBEDO_ENTITY_ID          = os.getenv("ALBEDO_ENTITY_ID",          "urn:ngsi-ld:GeoSpatialLayer:Albedo:brussels:2024")
 LST_ENTITY_ID             = os.getenv("LST_ENTITY_ID",             "urn:ngsi-ld:GeoSpatialLayer:LST:brussels:2024")
 
 NGSI_LD_CONTEXT = "https://uri.etsi.org/ngsi-ld/v1/ngsi-ld-core-context.jsonld"
@@ -176,13 +181,17 @@ def _extract_path(entity: dict) -> Path:
 
 
 async def _resolve_all_layers() -> dict[str, Path]:
-    """Fetch all five input layer paths from Orion."""
+    """Fetch all nine input layer paths from Orion."""
     logger.info("Resolving input layers from Orion for prediction…")
     layer_map = {
         "ndvi":            NDVI_ENTITY_ID,
         "ndwi":            NDWI_ENTITY_ID,
+        "ndbi":            NDBI_ENTITY_ID,
         "dtm":             DTM_ENTITY_ID,
+        "dsm":             DSM_ENTITY_ID,
         "building_height": BUILDING_HEIGHT_ENTITY_ID,
+        "imperviousness":  IMPERVIOUSNESS_ENTITY_ID,
+        "albedo":          ALBEDO_ENTITY_ID,
         "lst":             LST_ENTITY_ID,
     }
     paths: dict[str, Path] = {}
@@ -266,6 +275,18 @@ async def _register_heatmap_entity(prediction_path: Path, input_entity_ids: list
 
     return entity_id
 
+def _sample_distance(
+    dist_raster: np.ndarray,
+    rows: np.ndarray,
+    cols: np.ndarray,
+    downsample: int = 4,
+) -> np.ndarray:
+    """Look up distance values for full-resolution pixel coordinates."""
+    ds_rows = np.clip(rows // downsample, 0, dist_raster.shape[0] - 1)
+    ds_cols = np.clip(cols // downsample, 0, dist_raster.shape[1] - 1)
+    return dist_raster[ds_rows, ds_cols]
+
+
 def _process_tile(
     row_off: int,
     col_off: int,
@@ -278,6 +299,8 @@ def _process_tile(
     xgb_model,
     uhi_min: float,
     uhi_max: float,
+    dist_water: np.ndarray,
+    dist_park: np.ndarray,
 ) -> tuple[Window, np.ndarray]:
     """
     Read, decode, predict and encode one tile.
@@ -287,37 +310,22 @@ def _process_tile(
     tile_w = min(TILE_COLS, total_width  - col_off)
     window = Window(col_off, row_off, tile_w, tile_h)
 
-    # ── Read all 5 layers in parallel (I/O-bound) ────────────────────
+    # ── Read all layers in parallel (I/O-bound) ──────────────────────
     decoded_layers = _read_tile_parallel(
-        paths  = paths,
+        paths         = paths,
         window        = window,
         ref_transform = ref_transform,
         ref_crs       = ref_crs,
     )
 
-    ndvi_f, ndvi_nodata = decoded_layers["ndvi"]
-    ndwi_f, ndwi_nodata = decoded_layers["ndwi"]
-    dtm_f,  dtm_nodata  = decoded_layers["dtm"]
-    bh_f,   bh_nodata   = decoded_layers["building_height"]
-    lst_f,  lst_nodata  = decoded_layers["lst"]
+    # ── Validity mask: all layers must have data ─────────────────────
+    first_array = next(iter(decoded_layers.values()))[0]
+    valid = np.ones(first_array.shape, dtype=bool)
+    for layer_name, (decoded, nodata_mask) in decoded_layers.items():
+        valid &= ~nodata_mask
 
-    valid = (
-        ~ndvi_nodata
-        & ~ndwi_nodata
-        & ~dtm_nodata
-        & ~bh_nodata
-        & ~lst_nodata
-        & np.isfinite(lst_f)
-        & (lst_f > 0)
-    )
-
-    # ── Distance to image centre ─────────────────────────────────────
-    rr, cc = np.mgrid[row_off:row_off + tile_h,
-                      col_off:col_off + tile_w]
-    dist = np.sqrt(
-        (rr - total_height / 2) ** 2 +
-        (cc - total_width  / 2) ** 2
-    ).astype(np.float32)
+    lst_f, _ = decoded_layers["lst"]
+    valid &= np.isfinite(lst_f) & (lst_f > 0)
 
     out = np.full((tile_h, tile_w), 255, dtype=np.uint8)
 
@@ -325,12 +333,25 @@ def _process_tile(
     if n_valid > 0:
         idx = np.flatnonzero(valid)
 
+        # Global pixel coordinates for distance lookup
+        rr_tile, cc_tile = np.unravel_index(idx, (tile_h, tile_w))
+        rr_g = rr_tile + row_off
+        cc_g = cc_tile + col_off
+
+        dw = _sample_distance(dist_water, rr_g, cc_g)
+        dp = _sample_distance(dist_park,  rr_g, cc_g)
+
         X = np.column_stack([
-            ndvi_f.ravel()[idx],
-            ndwi_f.ravel()[idx],
-            dtm_f.ravel()[idx],
-            bh_f.ravel()[idx],
-            dist.ravel()[idx],
+            decoded_layers["ndvi"][0].ravel()[idx],
+            decoded_layers["ndwi"][0].ravel()[idx],
+            decoded_layers["ndbi"][0].ravel()[idx],
+            decoded_layers["dtm"][0].ravel()[idx],
+            decoded_layers["dsm"][0].ravel()[idx],
+            decoded_layers["building_height"][0].ravel()[idx],
+            decoded_layers["imperviousness"][0].ravel()[idx],
+            decoded_layers["albedo"][0].ravel()[idx],
+            dw,
+            dp,
         ]).astype(np.float32)
 
         y_pred = xgb_model.predict(X).astype(np.float32)
@@ -342,7 +363,6 @@ def _process_tile(
         heat_risk = np.clip(heat_risk, 0.0, 1.0)
 
         encoded = (heat_risk * 254).astype(np.uint8)
-        rr_tile, cc_tile = np.unravel_index(idx, (tile_h, tile_w))
         out[rr_tile, cc_tile] = encoded
 
     return window, out
@@ -353,8 +373,8 @@ def _prediction_job(paths: dict[str, Path], loop: asyncio.AbstractEventLoop) -> 
     """
     Runs in a daemon thread. Steps:
       1. Load model from disk
-      2. Open reference grid (NDVI)
-      3. For each tile: read all 5 layers → build feature matrix → predict → encode uint8
+      2. Open reference grid (NDVI), pre-compute distance rasters
+      3. For each tile: read all 9 layers → build 10-feature matrix → predict → encode uint8
       4. Write COG GeoTIFF
       5. Build overviews
       6. Register entity in Orion
@@ -379,6 +399,17 @@ def _prediction_job(paths: dict[str, Path], loop: asyncio.AbstractEventLoop) -> 
         uhi_min = float(artifact.get("uhi_min",  0.0))
         uhi_max = float(artifact.get("uhi_max", 1.0))
 
+        # ── Log training metrics & feature importance ────────────────
+        importances = xgb_model.feature_importances_
+        logger.info("── Model metrics ──────────────────────────────────")
+        logger.info(f"  UHI range     : [{uhi_min:.3f}, {uhi_max:.3f}] °C")
+        logger.info(f"  Avg UHI       : {artifact.get('avg_uhi', 'N/A')}")
+        logger.info(f"  Created at    : {artifact.get('created_at', 'N/A')}")
+        logger.info("── Feature importance ─────────────────────────────")
+        sorted_idx = np.argsort(importances)[::-1]
+        for i in sorted_idx:
+            logger.info(f"  {feature_names[i]:22s}  {importances[i]:.4f}")
+
         # ── 2. Reference grid from NDVI ──────────────────────────────
         ndvi_path = paths["ndvi"]
         with rasterio.open(ndvi_path) as ref:
@@ -390,6 +421,39 @@ def _prediction_job(paths: dict[str, Path], loop: asyncio.AbstractEventLoop) -> 
         logger.info(
             f"Reference grid: {total_width}×{total_height} px, "
         )
+
+        # ── 2b. Pre-compute distance rasters ────────────────────────
+        prediction_state.update("Pre-computing distance rasters…")
+        DOWNSAMPLE = 4
+        ds_h = total_height // DOWNSAMPLE
+        ds_w = total_width // DOWNSAMPLE
+        pixel_size = abs(ref_transform.a)
+
+        logger.info(f"Pre-computing distance_to_water ({ds_h}×{ds_w} downsampled)…")
+        with rasterio.open(paths["ndwi"]) as src:
+            ndwi_ds = src.read(
+                1, out_shape=(ds_h, ds_w),
+                resampling=Resampling.bilinear,
+            ).astype(np.float32)
+        ndwi_decoded = (ndwi_ds / 254.0) * 2.0 - 1.0
+        water_mask = ndwi_decoded > 0.0
+        dist_water = distance_transform_edt(~water_mask).astype(np.float32)
+        dist_water *= (pixel_size * DOWNSAMPLE)
+        del ndwi_ds, ndwi_decoded, water_mask
+        logger.info(f"  distance_to_water range: [{dist_water.min():.0f}, {dist_water.max():.0f}] m")
+
+        logger.info(f"Pre-computing distance_to_park ({ds_h}×{ds_w} downsampled)…")
+        with rasterio.open(paths["ndvi"]) as src:
+            ndvi_ds = src.read(
+                1, out_shape=(ds_h, ds_w),
+                resampling=Resampling.bilinear,
+            ).astype(np.float32)
+        ndvi_decoded = (ndvi_ds / 254.0) * 2.0 - 1.0
+        park_mask = ndvi_decoded > 0.4
+        dist_park = distance_transform_edt(~park_mask).astype(np.float32)
+        dist_park *= (pixel_size * DOWNSAMPLE)
+        del ndvi_ds, ndvi_decoded, park_mask
+        logger.info(f"  distance_to_park range: [{dist_park.min():.0f}, {dist_park.max():.0f}] m")
 
         OUTPUT_PATH.mkdir(parents=True, exist_ok=True)
         prediction_path = OUTPUT_PATH / "uhi_xgb_heatmap_brussels_2024.tif"
@@ -433,6 +497,7 @@ def _prediction_job(paths: dict[str, Path], loop: asyncio.AbstractEventLoop) -> 
                         ref_transform, ref_crs,
                         artifact, xgb_model,
                         uhi_min, uhi_max,
+                        dist_water, dist_park,
                     ): (row_off, col_off)
                     for row_off, col_off in tile_offsets
                 }
@@ -467,8 +532,11 @@ def _prediction_job(paths: dict[str, Path], loop: asyncio.AbstractEventLoop) -> 
 
         # ── 5. Register in Orion (async from sync thread) ────────────
         prediction_state.update("Registering UHIHeatMap entity in Orion…")
-        input_ids = [NDVI_ENTITY_ID, NDWI_ENTITY_ID,
-                     DTM_ENTITY_ID, BUILDING_HEIGHT_ENTITY_ID, LST_ENTITY_ID]
+        input_ids = [
+            NDVI_ENTITY_ID, NDWI_ENTITY_ID, NDBI_ENTITY_ID,
+            DTM_ENTITY_ID, DSM_ENTITY_ID, BUILDING_HEIGHT_ENTITY_ID,
+            IMPERVIOUSNESS_ENTITY_ID, ALBEDO_ENTITY_ID, LST_ENTITY_ID,
+        ]
         future = asyncio.run_coroutine_threadsafe(
             _register_heatmap_entity(prediction_path, input_ids,uhi_min, uhi_max),
             loop,
@@ -499,13 +567,17 @@ def _read_tile_parallel(
     Layers already on the NDVI reference grid are read natively;
     others (dtm, building_height, lst) are reprojected on the fly.
     """
-    native = {"ndvi", "ndwi"}   # same CRS/resolution as reference
+    native = {"ndvi", "ndwi", "ndbi"}   # same CRS/resolution as reference
 
     def _load(name: str, path: Path) -> tuple[str, tuple[np.ndarray, np.ndarray]]:
         decoder = LayerDecoder()
         if name in native:
             with rasterio.open(path) as src:
-                raw = src.read(1, window=window, out_dtype=np.float32)
+                raw = src.read(
+                    1, window=window, boundless=True,
+                    fill_value=src.nodata if src.nodata is not None else 0,
+                    out_dtype=np.float32,
+                )
             decoded, nodata_mask = decoder.decode(
                 raw=raw,
                 layer_name=name,
@@ -514,17 +586,19 @@ def _read_tile_parallel(
             return name, (decoded, nodata_mask)
         # Reproject to reference tile extent
         h, w   = window.height, window.width
-        raw    = np.empty((h, w), dtype=np.float32)
+        raw    = np.full((h, w), np.nan, dtype=np.float32)
         bounds = rasterio.windows.bounds(window, ref_transform)
         dst_tf = rasterio.transform.from_bounds(*bounds, width=w, height=h)
-        with rasterio.open(path) as src: 
+        with rasterio.open(path) as src:
             reproject(
                 source        = rasterio.band(src, 1),
                 destination   = raw,
                 src_transform = src.transform,
                 src_crs       = src.crs,
+                src_nodata    = src.nodata,
                 dst_transform = dst_tf,
                 dst_crs       = ref_crs,
+                dst_nodata    = np.nan,
                 resampling    = Resampling.bilinear,
             )
         decoded, nodata_mask = decoder.decode(

@@ -20,6 +20,7 @@ import rasterio
 from rasterio.windows import Window
 
 from algorithm.config import Settings
+from algorithm.domain.layer_decoder import LayerDecoder
 from algorithm.infrastructure.orion_publisher import OrionPublisher
 from algorithm.training_service import TrainingState, UHIPreprocessor, XGBoostUHIModel
 
@@ -121,8 +122,9 @@ class TrainingOrchestrator:
 
     def _compute_lst_rural_reference(self, lst_path: Path) -> float:
         """
-        Read a 20×20 pixel window around the rural reference point
-        and return the median LST value as the baseline temperature.
+        Read a 20×20 pixel window around the rural reference point,
+        decode it via LayerDecoder, and return the median LST value
+        as the baseline temperature.
         """
         row_ref, col_ref = self._settings.rural_point
         window = Window(
@@ -130,10 +132,24 @@ class TrainingOrchestrator:
             width=20, height=20,
         )
         with rasterio.open(lst_path) as src:
-            patch = src.read(1, window=window).astype(float)
+            raw = src.read(1, window=window, out_dtype=np.float32)
 
-        lst_rural = float(np.nanmedian(patch))
-        logger.info(f"LST rural reference: {lst_rural:.2f} K")
+        decoder = LayerDecoder()
+        decoded, nodata_mask = decoder.decode(
+            raw=raw,
+            layer_name="lst",
+            raster_path=str(lst_path),
+        )
+
+        valid = decoded[~nodata_mask]
+        if valid.size == 0:
+            raise ValueError(
+                f"No valid LST pixels in rural reference window at "
+                f"row={row_ref}, col={col_ref}. Check rural_point setting."
+            )
+
+        lst_rural = float(np.nanmedian(valid))
+        logger.info(f"LST rural reference: {lst_rural:.2f} °C")
         return lst_rural
 
     def _load_or_collect_samples(

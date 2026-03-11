@@ -30,6 +30,7 @@ import pandas as pd
 import rasterio
 from rasterio.warp import reproject, Resampling
 from rasterio.windows import Window
+from scipy.ndimage import distance_transform_edt
 from sklearn.model_selection import train_test_split
 import xgboost as xgb
 from fastapi import APIRouter, HTTPException
@@ -193,7 +194,7 @@ class UHIPreprocessor:
     def _read_reprojected(self, path: Path, window: Window) -> np.ndarray:
         """Read a window from a raster on a different grid and reproject it."""
         h, w      = window.height, window.width
-        dst       = np.empty((h, w), dtype=np.float32)
+        dst       = np.full((h, w), np.nan, dtype=np.float32)
         bounds    = rasterio.windows.bounds(window, self.ref_transform)
         dst_tf    = rasterio.transform.from_bounds(*bounds, width=w, height=h)
 
@@ -203,8 +204,10 @@ class UHIPreprocessor:
                 destination  = dst,
                 src_transform= src.transform,
                 src_crs      = src.crs,
+                src_nodata   = src.nodata,
                 dst_transform= dst_tf,
                 dst_crs      = self.ref_crs,
+                dst_nodata   = np.nan,
                 resampling   = Resampling.bilinear,
             )
         return dst
@@ -223,6 +226,7 @@ class UHIPreprocessor:
             if layer_name in _NATIVE_LAYERS
             else self._read_reprojected(path, window)
         )
+        logger.debug(f"Read raw window for {layer_name} from {path} with shape {raw.shape} and dtype {raw.dtype}")
         decoded, nodata_mask = self._decoder.decode(
             raw=raw,
             layer_name=layer_name,
@@ -251,6 +255,72 @@ class UHIPreprocessor:
 
         return results
 
+    # ── Distance feature pre-computation ─────────────────────────────
+
+    def precompute_distance_rasters(
+        self,
+        ndvi_path: Path,
+        ndwi_path: Path,
+    ) -> tuple[np.ndarray, np.ndarray]:
+        """
+        Pre-compute distance-to-water and distance-to-park rasters at
+        a downsampled resolution (1/DOWNSAMPLE), then upscale to full res.
+
+        Returns (dist_water, dist_park) as float32 arrays in pixel units,
+        scaled by DOWNSAMPLE so values approximate full-res pixel distances.
+        The arrays are at downsampled resolution — use _sample_distance()
+        to look up values for full-resolution pixel coordinates.
+        """
+        DOWNSAMPLE = 4
+        total_h, total_w = self.ref_shape
+        ds_h = total_h // DOWNSAMPLE
+        ds_w = total_w // DOWNSAMPLE
+
+        pixel_size = abs(self.ref_transform.a)  # meters per pixel
+
+        # ── Water mask from NDWI ──────────────────────────────────────
+        logger.info(f"Pre-computing distance_to_water ({ds_h}×{ds_w} downsampled)…")
+        with rasterio.open(ndwi_path) as src:
+            ndwi_ds = src.read(
+                1, out_shape=(ds_h, ds_w),
+                resampling=Resampling.bilinear,
+            ).astype(np.float32)
+        # Decode uint8 spectral index
+        ndwi_decoded = (ndwi_ds / 254.0) * 2.0 - 1.0
+        water_mask = ndwi_decoded > 0.0  # water pixels
+        dist_water = distance_transform_edt(~water_mask).astype(np.float32)
+        dist_water *= (pixel_size * DOWNSAMPLE)  # convert to meters
+        del ndwi_ds, ndwi_decoded, water_mask
+        logger.info(f"  distance_to_water range: [{dist_water.min():.0f}, {dist_water.max():.0f}] m")
+
+        # ── Park mask from NDVI ───────────────────────────────────────
+        logger.info(f"Pre-computing distance_to_park ({ds_h}×{ds_w} downsampled)…")
+        with rasterio.open(ndvi_path) as src:
+            ndvi_ds = src.read(
+                1, out_shape=(ds_h, ds_w),
+                resampling=Resampling.bilinear,
+            ).astype(np.float32)
+        ndvi_decoded = (ndvi_ds / 254.0) * 2.0 - 1.0
+        park_mask = ndvi_decoded > 0.4  # dense vegetation = park / green space
+        dist_park = distance_transform_edt(~park_mask).astype(np.float32)
+        dist_park *= (pixel_size * DOWNSAMPLE)
+        del ndvi_ds, ndvi_decoded, park_mask
+        logger.info(f"  distance_to_park range: [{dist_park.min():.0f}, {dist_park.max():.0f}] m")
+
+        return dist_water, dist_park
+
+    def _sample_distance(
+        self,
+        dist_raster: np.ndarray,
+        rows: np.ndarray,
+        cols: np.ndarray,
+        downsample: int = 4,
+    ) -> np.ndarray:
+        """Look up distance values for full-resolution pixel coordinates."""
+        ds_rows = np.clip(rows // downsample, 0, dist_raster.shape[0] - 1)
+        ds_cols = np.clip(cols // downsample, 0, dist_raster.shape[1] - 1)
+        return dist_raster[ds_rows, ds_cols]
+
     # ── Sample collection ────────────────────────────────────────────
 
     def collect_samples(
@@ -263,12 +333,26 @@ class UHIPreprocessor:
         Walk the full raster extent chunk by chunk.
         Return (X, y) where y = LST_pixel - LST_rural (UHI in °C/K).
 
-        Memory cost at any point in time = one chunk × n_layers × 4 bytes.
-        For CHUNK_ROWS=2048, CHUNK_COLS=2048, 5 layers → ~80 MB.
+        Features (10):
+          ndvi, ndwi, ndbi,
+          dtm, dsm, building_height,
+          imperviousness, albedo,
+          distance_to_water, distance_to_park
         """
+        # Pre-compute distance rasters (downsampled, in meters)
+        dist_water, dist_park = self.precompute_distance_rasters(
+            ndvi_path=paths["ndvi"],
+            ndwi_path=paths["ndwi"],
+        )
+
         total_rows, total_cols = self.ref_shape
         X_chunks, y_chunks = [], []
         rng = np.random.default_rng(42)
+
+        # Exclude distance rasters from chunk I/O (they are pre-computed)
+        chunk_paths = {k: v for k, v in paths.items() if k != "lst"}
+        # lst is read too but only for the target, include it
+        chunk_paths_with_lst = {**chunk_paths, "lst": paths["lst"]}
 
         n_total = (
             ((total_rows + CHUNK_ROWS - 1) // CHUNK_ROWS) *
@@ -284,7 +368,7 @@ class UHIPreprocessor:
                 h, w = row1 - row0, col1 - col0
 
                 window = Window(col_off=col0, row_off=row0, width=w, height=h)
-                decoded_layers = self._read_chunk_parallel(paths, window)
+                decoded_layers = self._read_chunk_parallel(chunk_paths_with_lst, window)
 
                 valid = self._build_validity_mask(decoded_layers)
 
@@ -300,25 +384,24 @@ class UHIPreprocessor:
                 rr, cc       = np.unravel_index(chosen, (h, w))
                 rr_g, cc_g   = rr + row0, cc + col0
 
-                dist = np.sqrt(
-                    (rr_g - total_rows / 2) ** 2 +
-                    (cc_g - total_cols / 2) ** 2
-                ).astype(np.float32)
-
-                ndvi_data = decoded_layers["ndvi"][0]
-                ndwi_data = decoded_layers["ndwi"][0]
-                dtm_data = decoded_layers["dtm"][0]
-                bh_data = decoded_layers["building_height"][0]
-                lst_data = decoded_layers["lst"][0]
+                # Look up pre-computed distance features
+                dw = self._sample_distance(dist_water, rr_g, cc_g)
+                dp = self._sample_distance(dist_park, rr_g, cc_g)
 
                 X_chunk = np.column_stack([
-                    ndvi_data.ravel()[chosen],
-                    ndwi_data.ravel()[chosen],
-                    dtm_data.ravel()[chosen],
-                    bh_data.ravel()[chosen],
-                    dist,
+                    decoded_layers["ndvi"][0].ravel()[chosen],
+                    decoded_layers["ndwi"][0].ravel()[chosen],
+                    decoded_layers["ndbi"][0].ravel()[chosen],
+                    decoded_layers["dtm"][0].ravel()[chosen],
+                    decoded_layers["dsm"][0].ravel()[chosen],
+                    decoded_layers["building_height"][0].ravel()[chosen],
+                    decoded_layers["imperviousness"][0].ravel()[chosen],
+                    decoded_layers["albedo"][0].ravel()[chosen],
+                    dw,
+                    dp,
                 ]).astype(np.float32)
 
+                lst_data = decoded_layers["lst"][0]
                 y_chunk = (lst_data.ravel()[chosen] - lst_rural).astype(np.float32)
 
                 X_chunks.append(X_chunk)
@@ -327,9 +410,8 @@ class UHIPreprocessor:
                 del decoded_layers, valid, X_chunk, y_chunk
 
                 processed += 1
-                if processed % 200 == 0:
-                    logger.info(f"  {processed}/{n_total} chunks ({processed/n_total*100:.1f}%)")
 
+        del dist_water, dist_park
         logger.info(f"Collection complete — {processed} chunks processed")
         return np.vstack(X_chunks), np.concatenate(y_chunks)
 
@@ -346,27 +428,17 @@ class UHIPreprocessor:
 
         valid = np.ones(first_array.shape, dtype=bool)
 
-        logger.info(f"Total pixels: {total_pixels:,}")
-
         for layer_name, (decoded, nodata_mask) in decoded_layers.items():
             layer_valid_pixels = np.count_nonzero(~nodata_mask)
             layer_invalid_pixels = np.count_nonzero(nodata_mask)
-            logger.info(
+            """logger.info(
                 f"[{layer_name.upper()}] "
                 f"valid: {layer_valid_pixels:,} | "
                 f"nodata: {layer_invalid_pixels:,} "
                 f"({layer_invalid_pixels / total_pixels:.2%})"
-            )
+            )"""
             valid &= ~nodata_mask
 
-        
-        after_nodata_valid = np.count_nonzero(valid)
-
-        logger.info(
-            f"After nodata intersection: "
-            f"{after_nodata_valid:,} valid pixels "
-            f"({after_nodata_valid / total_pixels:.2%})"
-        )
 
         # Contrainte supplémentaire sur LST
         lst_data, _ = decoded_layers["lst"]
@@ -377,7 +449,12 @@ class UHIPreprocessor:
 # XGBoost model wrapper
 # ---------------------------------------------------------------------------
 
-FEATURE_NAMES = ["ndvi", "ndwi", "dtm", "building_height", "distance_to_center"]
+FEATURE_NAMES = [
+    "ndvi", "ndwi", "ndbi",
+    "dtm", "dsm", "building_height",
+    "imperviousness", "albedo",
+    "distance_to_water", "distance_to_park",
+]
 
 
 class XGBoostUHIModel:

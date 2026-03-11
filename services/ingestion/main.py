@@ -430,8 +430,28 @@ async def run_ingestion_pipeline(rgb_url: str, nir_url: str, dtm_url: str, build
                     file_path=str(lst_cog_path),
                     resolution=40
                 )] if lst_available and lst_cog_path.exists() else []
-            )
+            ),
         ]
+
+        # ── Register pre-existing processed layers (DSM, NDBI, imperviousness, albedo)
+        extra_layers = [
+            ("DSM",             "DSM Brussels 2024",             "elevation",  "dsm_brussels_2024.tif",             100),
+            ("NDBI",            "NDBI Brussels 2024",            "computed",   "ndbi_brussels_2024.tif",            40),
+            ("Imperviousness",  "Imperviousness Brussels 2024",  "computed",   "imperviousness_brussels_2024.tif",  40),
+            ("Albedo",          "Albedo Brussels 2024",          "computed",   "albedo_brussels_2024.tif",          40),
+        ]
+        for ltype, lname, spectral, filename, res in extra_layers:
+            fpath = DATA_PROCESSED_PATH / filename
+            if fpath.exists():
+                layers_to_register.append(GeoSpatialLayer(
+                    layer_type=ltype,
+                    name=lname,
+                    spectral_range=spectral,
+                    file_path=str(fpath),
+                    resolution=res,
+                ))
+            else:
+                logger.warning(f"Skipping {ltype}: file not found at {fpath}")
         
         for layer in layers_to_register:
             try:
