@@ -121,8 +121,60 @@ export function useAppState() {
       opacity: 0.7,
       category: 'map_layers',
       legend: {
-        min: { value: 0, color: '#000000', label: 'Temperature 0' },
-        max: { value: 254, color: '#ffffff', label: 'Temperature Max' }
+        min: { value: 0, color: '#313695', label: 'Cold' },
+        max: { value: 254, color: '#a50026', label: 'Hot' }
+      }
+    },
+    {
+      id: 'dsm',
+      name: 'DSM',
+      description: 'Digital Surface Model (elevation + objects)',
+      wmsLayer: 'uhi:dsm',
+      visible: false,
+      opacity: 0.7,
+      category: 'map_layers',
+      legend: {
+        min: { value: 0, color: '#1a1a2e', label: '0 m' },
+        max: { value: 220, color: '#ffffff', label: '220 m' }
+      }
+    },
+    {
+      id: 'ndbi',
+      name: 'NDBI',
+      description: 'Built-Up Index (-1 to 1)',
+      wmsLayer: 'uhi:ndbi',
+      visible: false,
+      opacity: 0.7,
+      category: 'map_layers',
+      legend: {
+        min: { value: -0.5, color: '#1a9641', label: 'Vegetation' },
+        max: { value: 0.6, color: '#7b0f1a', label: 'Built-up' }
+      }
+    },
+    {
+      id: 'imperviousness',
+      name: 'Imperviousness',
+      description: 'Surface imperviousness (0-100%)',
+      wmsLayer: 'uhi:imperviousness',
+      visible: false,
+      opacity: 0.7,
+      category: 'map_layers',
+      legend: {
+        min: { value: 0, color: '#1a9850', label: 'Permeable' },
+        max: { value: 100, color: '#d73027', label: 'Impervious' }
+      }
+    },
+    {
+      id: 'albedo',
+      name: 'Albedo',
+      description: 'Surface reflectance (0-1)',
+      wmsLayer: 'uhi:albedo',
+      visible: false,
+      opacity: 0.7,
+      category: 'map_layers',
+      legend: {
+        min: { value: 0, color: '#1a1a2e', label: 'Dark' },
+        max: { value: 0.5, color: '#ffffff', label: 'Bright' }
       }
     }
   ])

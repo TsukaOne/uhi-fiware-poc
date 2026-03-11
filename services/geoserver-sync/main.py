@@ -324,7 +324,124 @@ STYLES = {
                 </FeatureTypeStyle>
             </UserStyle>
         </NamedLayer>
-    </StyledLayerDescriptor>"""
+    </StyledLayerDescriptor>""",
+
+    "dsm": """<?xml version="1.0" encoding="UTF-8"?>
+    <StyledLayerDescriptor version="1.0.0"
+        xmlns="http://www.opengis.net/sld"
+        xmlns:ogc="http://www.opengis.net/ogc"
+        xmlns:xlink="http://www.w3.org/1999/xlink">
+        <NamedLayer>
+            <Name>dsm</Name>
+            <UserStyle>
+                <Name>dsm_style</Name>
+                <Title>Digital Surface Model - Brussels</Title>
+                <FeatureTypeStyle>
+                    <Rule>
+                        <RasterSymbolizer>
+                            <ColorMap type="ramp">
+                                <ColorMapEntry color="#1a1a2e" quantity="0"   opacity="1" label="Low"/>
+                                <ColorMapEntry color="#2d4a3e" quantity="17"  opacity="1"/>
+                                <ColorMapEntry color="#4a7c59" quantity="35"  opacity="1"/>
+                                <ColorMapEntry color="#8fb339" quantity="58"  opacity="1"/>
+                                <ColorMapEntry color="#d4c957" quantity="87"  opacity="1"/>
+                                <ColorMapEntry color="#e8a84c" quantity="115" opacity="1"/>
+                                <ColorMapEntry color="#d45b3a" quantity="150" opacity="1"/>
+                                <ColorMapEntry color="#a83279" quantity="196" opacity="1"/>
+                                <ColorMapEntry color="#ffffff" quantity="254" opacity="1" label="High"/>
+                            </ColorMap>
+                        </RasterSymbolizer>
+                    </Rule>
+                </FeatureTypeStyle>
+            </UserStyle>
+        </NamedLayer>
+    </StyledLayerDescriptor>""",
+
+    "ndbi": """<?xml version="1.0" encoding="UTF-8"?>
+    <StyledLayerDescriptor version="1.0.0"
+        xmlns="http://www.opengis.net/sld"
+        xmlns:ogc="http://www.opengis.net/ogc"
+        xmlns:xlink="http://www.w3.org/1999/xlink">
+        <NamedLayer>
+            <Name>ndbi</Name>
+            <UserStyle>
+                <Name>ndbi_style</Name>
+                <Title>Normalized Difference Built-Up Index - Brussels</Title>
+                <FeatureTypeStyle>
+                    <Rule>
+                        <RasterSymbolizer>
+                            <ColorMap type="ramp">
+                                <ColorMapEntry color="#1a9641" quantity="0"   opacity="1" label="Vegetation"/>
+                                <ColorMapEntry color="#a6d96a" quantity="38"  opacity="1"/>
+                                <ColorMapEntry color="#ffffbf" quantity="64"  opacity="1" label="Neutral"/>
+                                <ColorMapEntry color="#fdae61" quantity="102" opacity="1"/>
+                                <ColorMapEntry color="#d73027" quantity="152" opacity="1"/>
+                                <ColorMapEntry color="#7b0f1a" quantity="254" opacity="1" label="Built-up"/>
+                            </ColorMap>
+                        </RasterSymbolizer>
+                    </Rule>
+                </FeatureTypeStyle>
+            </UserStyle>
+        </NamedLayer>
+    </StyledLayerDescriptor>""",
+
+    "imperviousness": """<?xml version="1.0" encoding="UTF-8"?>
+    <StyledLayerDescriptor version="1.0.0"
+        xmlns="http://www.opengis.net/sld"
+        xmlns:ogc="http://www.opengis.net/ogc"
+        xmlns:xlink="http://www.w3.org/1999/xlink">
+        <NamedLayer>
+            <Name>imperviousness</Name>
+            <UserStyle>
+                <Name>imperviousness_style</Name>
+                <Title>Imperviousness - Brussels</Title>
+                <FeatureTypeStyle>
+                    <Rule>
+                        <RasterSymbolizer>
+                            <ColorMap type="ramp">
+                                <ColorMapEntry color="#1a9850" quantity="0"   opacity="1" label="Permeable"/>
+                                <ColorMapEntry color="#91cf60" quantity="51"  opacity="1"/>
+                                <ColorMapEntry color="#d9ef8b" quantity="102" opacity="1"/>
+                                <ColorMapEntry color="#fee08b" quantity="152" opacity="1"/>
+                                <ColorMapEntry color="#fc8d59" quantity="203" opacity="1"/>
+                                <ColorMapEntry color="#d73027" quantity="254" opacity="1" label="Impervious"/>
+                            </ColorMap>
+                        </RasterSymbolizer>
+                    </Rule>
+                </FeatureTypeStyle>
+            </UserStyle>
+        </NamedLayer>
+    </StyledLayerDescriptor>""",
+
+    "albedo": """<?xml version="1.0" encoding="UTF-8"?>
+    <StyledLayerDescriptor version="1.0.0"
+        xmlns="http://www.opengis.net/sld"
+        xmlns:ogc="http://www.opengis.net/ogc"
+        xmlns:xlink="http://www.w3.org/1999/xlink">
+        <NamedLayer>
+            <Name>albedo</Name>
+            <UserStyle>
+                <Name>albedo_style</Name>
+                <Title>Albedo - Brussels</Title>
+                <FeatureTypeStyle>
+                    <Rule>
+                        <RasterSymbolizer>
+                            <ColorMap type="ramp">
+                                <ColorMapEntry color="#1a1a2e" quantity="0"   opacity="1" label="Dark"/>
+                                <ColorMapEntry color="#2d3a4e" quantity="25"  opacity="1"/>
+                                <ColorMapEntry color="#4a6a7a" quantity="51"  opacity="1"/>
+                                <ColorMapEntry color="#7a9eaa" quantity="76"  opacity="1"/>
+                                <ColorMapEntry color="#b0c4cc" quantity="102" opacity="1"/>
+                                <ColorMapEntry color="#d4dfe6" quantity="127" opacity="1"/>
+                                <ColorMapEntry color="#eef2f5" quantity="152" opacity="1"/>
+                                <ColorMapEntry color="#ffffff" quantity="254" opacity="1" label="Bright"/>
+                            </ColorMap>
+                        </RasterSymbolizer>
+                    </Rule>
+                </FeatureTypeStyle>
+            </UserStyle>
+        </NamedLayer>
+    </StyledLayerDescriptor>""",
 
 }
 # ===================================================================
@@ -676,24 +793,19 @@ def derive_layer_info(entity: dict) -> Optional[dict]:
 
     entity_type = entity.get("type")
 
+    # Map layer name → style name (must match keys in STYLES dict + "_style")
+    _STYLE_MAP = {
+        "dtm": "dtm_style", "ndwi": "ndwi_style", "ndvi": "ndvi_style",
+        "nir": "nir_style", "rgb": "rgb_style", "lst": "lst_style",
+        "dsm": "dsm_style", "ndbi": "ndbi_style",
+        "imperviousness": "imperviousness_style", "albedo": "albedo_style",
+    }
+
     if entity_type == "GeoSpatialLayer":
         layer_type = entity.get("layerType", {}).get("value", "unknown")
         name = layer_type.lower()
         title = entity.get("name", {}).get("value", name)
-        if name == "dtm":
-            style = "dtm_style"
-        elif name == "ndwi":
-            style = "ndwi_style"
-        elif name == "ndvi":
-            style = "ndvi_style"
-        elif name == "nir":
-            style = "nir_style"
-        elif name == "rgb":
-            style = "rgb_style"
-        elif name == "lst":
-            style = "lst_style"
-        else:
-            style = None
+        style = _STYLE_MAP.get(name)
     elif entity_type == "UHIHeatMap":
         name = "uhi_prediction"
         title = entity.get("name", {}).get("value", "UHI Heat Risk Prediction")

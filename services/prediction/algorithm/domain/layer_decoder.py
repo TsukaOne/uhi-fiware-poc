@@ -15,6 +15,10 @@ Conventions d'encodage (définies dans l'ingestion, respectées ici) :
     Encodé comme DTM : uint8 [0,254] → [MIN_TEMPERATURE, MAX_TEMPERATURE]
     Tags : MIN_TEMPERATURE / MAX_TEMPERATURE
 
+  DSM / Imperviousness / NDBI / Albedo (uint8 normalisé) :
+    Encodé comme DTM : uint8 [0,254] → [VALUE_MIN, VALUE_MAX]
+    Tags : VALUE_MIN / VALUE_MAX
+
   BuildingHeight (hauteur en mètres, float32 natif) :
     Pas de COG uint8 dans l'ingestion actuelle — lu directement.
 
@@ -101,25 +105,27 @@ LAYER_SPECS: dict[str, LayerSpec] = {
     ),
     "dsm": LayerSpec(
         name="DSM",
-        encoding=LayerEncoding.FLOAT32_NATIVE,
-        nodata_in=-9999.0,
-        nodata_out=np.nan,
+        encoding=LayerEncoding.RANGE_UINT8,
+        min_tag="VALUE_MIN",
+        max_tag="VALUE_MAX",
     ),
     "imperviousness": LayerSpec(
         name="Imperviousness",
-        encoding=LayerEncoding.FLOAT32_NATIVE,
-        nodata_in=-9999.0,
-        nodata_out=np.nan,
+        encoding=LayerEncoding.RANGE_UINT8,
+        min_tag="VALUE_MIN",
+        max_tag="VALUE_MAX",
     ),
     "ndbi": LayerSpec(
         name="NDBI",
-        encoding=LayerEncoding.SPECTRAL_INDEX,
+        encoding=LayerEncoding.RANGE_UINT8,
+        min_tag="VALUE_MIN",
+        max_tag="VALUE_MAX",
     ),
     "albedo": LayerSpec(
         name="Albedo",
-        encoding=LayerEncoding.FLOAT32_NATIVE,
-        nodata_in=-9999.0,
-        nodata_out=np.nan,
+        encoding=LayerEncoding.RANGE_UINT8,
+        min_tag="VALUE_MIN",
+        max_tag="VALUE_MAX",
     ),
 }
 

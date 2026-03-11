@@ -23,6 +23,7 @@ from processors.cog import build_overviews
 from fiware.client import OrionClient, GeoSpatialLayer
 from processors.get_dtm import download_wcs_raster
 from processors.lst import process_lst
+from processors.cog_float32 import process_float32_cog
 # Configure logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -376,7 +377,28 @@ async def run_ingestion_pipeline(rgb_url: str, nir_url: str, dtm_url: str, build
                 str(lst_path),
                 str(lst_cog_path)
             )
-        # Step 6: Register layers in Orion
+        # Step 7: Convert raw float32 layers to COG (DSM, NDBI, Imperviousness, Albedo)
+        raw_to_cog = [
+            ("dsm.tif",             "dsm_brussels_2024.tif",             "DSM"),
+            ("ndbi.tif",            "ndbi_brussels_2024.tif",            "NDBI"),
+            ("imperviousness.tif",  "imperviousness_brussels_2024.tif",  "Imperviousness"),
+            ("albedo.tif",          "albedo_brussels_2024.tif",          "Albedo"),
+        ]
+        for raw_name, cog_name, label in raw_to_cog:
+            raw_file = DATA_RAW_PATH / raw_name
+            cog_file = DATA_PROCESSED_PATH / cog_name
+            if raw_file.exists():
+                ingestion_status["progress"] = f"Converting {label} to COG..."
+                await run_if_missing(
+                    cog_file,
+                    process_float32_cog,
+                    str(raw_file),
+                    str(cog_file),
+                )
+            else:
+                logger.warning(f"Raw {label} not found at {raw_file}, skipping COG conversion")
+
+        # Step 8: Register layers in Orion
         ingestion_status["progress"] = "Registering layers in Orion..."
         
         layers_to_register = [
@@ -433,25 +455,21 @@ async def run_ingestion_pipeline(rgb_url: str, nir_url: str, dtm_url: str, build
             ),
         ]
 
-        # ── Register pre-existing processed layers (DSM, NDBI, imperviousness, albedo)
-        extra_layers = [
-            ("DSM",             "DSM Brussels 2024",             "elevation",  "dsm_brussels_2024.tif",             100),
-            ("NDBI",            "NDBI Brussels 2024",            "computed",   "ndbi_brussels_2024.tif",            40),
-            ("Imperviousness",  "Imperviousness Brussels 2024",  "computed",   "imperviousness_brussels_2024.tif",  40),
-            ("Albedo",          "Albedo Brussels 2024",          "computed",   "albedo_brussels_2024.tif",          40),
-        ]
-        for ltype, lname, spectral, filename, res in extra_layers:
-            fpath = DATA_PROCESSED_PATH / filename
-            if fpath.exists():
+        # ── Register COG float32 layers (DSM, NDBI, imperviousness, albedo)
+        for raw_name, cog_name, label in raw_to_cog:
+            cog_file = DATA_PROCESSED_PATH / cog_name
+            if cog_file.exists():
+                spectral = "elevation" if label == "DSM" else "computed"
+                res = 100 if label == "DSM" else 40
                 layers_to_register.append(GeoSpatialLayer(
-                    layer_type=ltype,
-                    name=lname,
+                    layer_type=label,
+                    name=f"{label} Brussels 2024",
                     spectral_range=spectral,
-                    file_path=str(fpath),
+                    file_path=str(cog_file),
                     resolution=res,
                 ))
             else:
-                logger.warning(f"Skipping {ltype}: file not found at {fpath}")
+                logger.warning(f"Skipping {label}: COG not found at {cog_file}")
         
         for layer in layers_to_register:
             try:
