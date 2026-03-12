@@ -1,0 +1,8 @@
+{
+  "permissions": {
+    "allow": [
+      "WebFetch(domain:vlinder.ugent.be)",
+      "WebFetch(domain:mooncake.ugent.be)"
+    ]
+  }
+}

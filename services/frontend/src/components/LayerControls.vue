@@ -71,7 +71,11 @@
             
             <div class="legend" v-if="layer.legend && layer.visible">
               <div class="legend-gradient" :style="getLegendStyle(layer.legend)"></div>
-              <div class="legend-labels">
+              <div class="legend-labels" v-if="tBase != null && uhiMin != null && uhiMax != null && layer.id === 'uhi_prediction'">
+                <span>{{ (tBase + uhiMin).toFixed(1) }} °C</span>
+                <span>{{ (tBase + uhiMax).toFixed(1) }} °C</span>
+              </div>
+              <div class="legend-labels" v-else>
                 <span>{{ layer.legend.min.label }}</span>
                 <span>{{ layer.legend.max.label }}</span>
               </div>
@@ -230,6 +234,18 @@
     },
     swipeRightLayerId: {
       type: String,
+      default: null
+    },
+    tBase: {
+      type: Number,
+      default: null
+    },
+    uhiMin: {
+      type: Number,
+      default: null
+    },
+    uhiMax: {
+      type: Number,
       default: null
     }
   })

@@ -78,6 +78,23 @@ class Settings(BaseSettings):
     rural_point_row: int = Field(default=15561, alias="RURAL_POINT_ROW")
     rural_point_col: int = Field(default=12526, alias="RURAL_POINT_COL")
 
+    # ── VLINDER / Mooncake ──────────────────────────────────────────────
+    vlinder_station_id: str = Field(
+        default="bPlA09QS8LkV82rkdlAphY1d",
+        alias="VLINDER_STATION_ID",
+        description="Mooncake station ID for the reference 'cool' station (default: Ukkel KMI)",
+    )
+    vlinder_default_temp: float = Field(
+        default=15.0,
+        alias="VLINDER_DEFAULT_TEMP",
+        description="Fallback temperature if VLINDER API is unreachable and no cache",
+    )
+    vlinder_cache_ttl: float = Field(
+        default=600.0,
+        alias="VLINDER_CACHE_TTL",
+        description="Cache TTL in seconds for VLINDER readings (default: 10 min)",
+    )
+
     # ── Training hyperparameter defaults ──────────────────────────────
     training_sample_rate: float = Field(default=0.005, alias="TRAINING_SAMPLE_RATE")
     training_n_estimators: int = Field(default=500, alias="TRAINING_N_ESTIMATORS")

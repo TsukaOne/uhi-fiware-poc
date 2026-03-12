@@ -108,6 +108,15 @@
         <i class="fas fa-arrows-left-right"></i>
       </button>
 
+      <button
+        class="tool-btn"
+        :class="{ active: showTBaseSlider }"
+        title="Temperature Reference (VLINDER)"
+        @click="showTBaseSlider = !showTBaseSlider"
+      >
+        <i class="fas fa-thermometer-half"></i>
+      </button>
+
       <div class="sun-sim-container">
         <button
           class="tool-btn"
@@ -263,6 +272,9 @@
       :swipeRightLayerId="swipeRightLayerId"
       :sunSimEnabled="sunSimEnabled"
       :sunSimTime="sunSimTime"
+      :tBase="tBase"
+      :uhiMin="uhiMin"
+      :uhiMax="uhiMax"
       @geometry-drawn="onGeometryDrawn"
       @drawing-active="onDrawingActive"
     />
@@ -288,12 +300,23 @@
       :swipeEnabled="swipeEnabled"
       :swipeLeftLayerId="swipeLeftLayerId"
       :swipeRightLayerId="swipeRightLayerId"
+      :tBase="tBase"
+      :uhiMin="uhiMin"
+      :uhiMax="uhiMax"
       @toggle-layer="toggleLayer"
       @set-opacity="setOpacity"
       @toggle-buildings="toggleBuildings"
       @toggle-trees="toggleTrees"
       @set-swipe-left="onSetSwipeLeft"
       @set-swipe-right="onSetSwipeRight"
+    />
+
+    <!-- T_BASE SLIDER -->
+    <TBaseSlider
+      v-if="showTBaseSlider"
+      v-model="tBase"
+      :uhiMin="uhiMin"
+      :uhiMax="uhiMax"
     />
   </div>
 </template>
@@ -307,6 +330,7 @@
   import PredictionPanel from './components/PredictionPanel.vue'
   import ZoneObjectsPanel from './components/ZoneObjectsPanel.vue'
   import ZoneInfoPanel from './components/ZoneInfoPanel.vue'
+  import TBaseSlider from './components/TBaseSlider.vue'
   const {
     viewMode, showLayers, layers, activeLayers, buildingVisible, treeVisible,
     showToolbox, drawingMode, showPredictMenu, drawnGeometries,
@@ -321,6 +345,32 @@
   const cesiumViewerInstance = computed(() =>
     cesiumViewerRef.value?.getViewer?.() ?? null
   )
+
+  // T_base + UHI range state
+  const showTBaseSlider = ref(false)
+  const tBase = ref(15.0)
+  const uhiMin = ref(null)
+  const uhiMax = ref(null)
+
+  async function fetchUhiRange() {
+    try {
+      const ORION_URL = window.location.port === '5173' ? '/orion' : '/orion'
+      const entityId = 'urn:ngsi-ld:UHIHeatMap:XGBoost:brussels:2024'
+      const resp = await fetch(
+        `${ORION_URL}/ngsi-ld/v1/entities/${entityId}?local=true`,
+        { headers: { 'Accept': 'application/json' } }
+      )
+      if (!resp.ok) return
+      const entity = await resp.json()
+      const range = entity?.valueRange?.value
+      if (range) {
+        uhiMin.value = range.min
+        uhiMax.value = range.max
+      }
+    } catch (err) {
+      console.warn('Failed to fetch UHI range from Orion:', err)
+    }
+  }
 
   // TOOLBOX DRAG STATE
   const toolboxPosition = ref({
@@ -510,6 +560,7 @@
     window.addEventListener('mousemove', onMouseMove)
     window.addEventListener('mouseup', stopDrag)
     document.addEventListener('click', onClickOutside)
+    fetchUhiRange()
   })
 
   onBeforeUnmount(() => {

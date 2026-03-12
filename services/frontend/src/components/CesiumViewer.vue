@@ -17,7 +17,10 @@
     swipeLeftLayerId: { type: String, default: null },
     swipeRightLayerId: { type: String, default: null },
     sunSimEnabled: { type: Boolean, default: false },
-    sunSimTime: { type: Number, default: 720 }
+    sunSimTime: { type: Number, default: 720 },
+    tBase: { type: Number, default: null },
+    uhiMin: { type: Number, default: null },
+    uhiMax: { type: Number, default: null }
   })
 
   const emit = defineEmits(['geometry-drawn', 'drawing-active'])

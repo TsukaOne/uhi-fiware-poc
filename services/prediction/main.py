@@ -18,6 +18,7 @@ from fastapi import FastAPI
 
 from algorithm.api.prediction_routeur import router as prediction_router
 from algorithm.api.training_router import router as training_router
+from algorithm.api.vlinder_router import router as vlinder_router
 from algorithm.application.prediction_orchestrator import PredictionOrchestrator
 from algorithm.application.training_orchestrator import TrainingOrchestrator
 from algorithm.config import settings
@@ -25,6 +26,7 @@ from algorithm.domain.uhi_raster_engine import UHIRasterEngine
 from algorithm.infrastructure.layer_resolver import LayerResolver
 from algorithm.infrastructure.orion_client import OrionClient
 from algorithm.infrastructure.orion_publisher import OrionPublisher
+from algorithm.infrastructure.vlinder_client import VlinderClient
 from algorithm.predict_service import _PredictionState
 from algorithm.training_service import TrainingState
 
@@ -40,6 +42,11 @@ orion_client = OrionClient(settings)
 layer_resolver = LayerResolver(orion_client)
 orion_publisher = OrionPublisher(orion_client)
 raster_engine = UHIRasterEngine()
+vlinder_client = VlinderClient(
+    station_id=settings.vlinder_station_id,
+    default_temp=settings.vlinder_default_temp,
+    cache_ttl_seconds=settings.vlinder_cache_ttl,
+)
 
 training_state = TrainingState()
 xgb_prediction_state = _PredictionState()
@@ -119,6 +126,7 @@ app = FastAPI(
 
 app.include_router(prediction_router)
 app.include_router(training_router)
+app.include_router(vlinder_router)
 
 
 @app.get("/health")

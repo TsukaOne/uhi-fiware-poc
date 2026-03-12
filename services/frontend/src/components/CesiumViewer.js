@@ -644,6 +644,101 @@ export function useCesiumViewer(props, emit) {
   }
 
   // ========================================
+  // UHI DYNAMIC SLD (T_base-dependent colormap)
+  // ========================================
+
+  const UHI_LAYER_ID = 'uhi_prediction'
+
+  // Fixed absolute temperature color scale
+  const TEMP_COLORS = [
+    { temp: 10, color: '#313695' },
+    { temp: 15, color: '#4575b4' },
+    { temp: 20, color: '#74add1' },
+    { temp: 25, color: '#fee090' },
+    { temp: 30, color: '#f46d43' },
+    { temp: 35, color: '#d73027' },
+    { temp: 40, color: '#a50026' },
+    { temp: 45, color: '#67001f' },
+  ]
+
+  function tempToPixel(tempAbs, tBase, uhiMin, uhiMax) {
+    // T_abs = tBase + (pixel / 254) * (uhiMax - uhiMin) + uhiMin
+    // => pixel = (T_abs - tBase - uhiMin) / (uhiMax - uhiMin) * 254
+    const p = (tempAbs - tBase - uhiMin) / (uhiMax - uhiMin) * 254
+    return Math.max(0, Math.min(254, Math.round(p)))
+  }
+
+  function buildUhiSldBody(wmsLayerName, tBase, uhiMin, uhiMax) {
+    const entries = TEMP_COLORS
+      .map(({ temp, color }) => {
+        const qty = tempToPixel(temp, tBase, uhiMin, uhiMax)
+        return `          <ColorMapEntry color="${color}" quantity="${qty}" label="${temp}°C"/>`
+      })
+      .join('\n')
+
+    return `<?xml version="1.0" encoding="UTF-8"?>
+<StyledLayerDescriptor version="1.0.0"
+  xsi:schemaLocation="http://www.opengis.net/sld StyledLayerDescriptor.xsd"
+  xmlns="http://www.opengis.net/sld"
+  xmlns:ogc="http://www.opengis.net/ogc"
+  xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+  <NamedLayer>
+    <Name>${wmsLayerName}</Name>
+    <UserStyle>
+      <Title>UHI Dynamic</Title>
+      <FeatureTypeStyle>
+        <Rule>
+          <RasterSymbolizer>
+            <ColorMap type="ramp">
+${entries}
+              <ColorMapEntry color="#000000" quantity="255" opacity="0" label="nodata"/>
+            </ColorMap>
+          </RasterSymbolizer>
+        </Rule>
+      </FeatureTypeStyle>
+    </UserStyle>
+  </NamedLayer>
+</StyledLayerDescriptor>`
+  }
+
+  function refreshUhiLayer(tBase, uhiMin, uhiMax) {
+    if (!viewer || tBase == null || uhiMin == null || uhiMax == null) return
+
+    const layerConfig = props.layers.find(l => l.id === UHI_LAYER_ID)
+    if (!layerConfig || !layerConfig.visible) return
+
+    // Remove old layer
+    if (wmsLayers.has(UHI_LAYER_ID)) {
+      const old = wmsLayers.get(UHI_LAYER_ID)
+      viewer.imageryLayers.remove(old)
+      wmsLayers.delete(UHI_LAYER_ID)
+    }
+
+    const sldBody = buildUhiSldBody(layerConfig.wmsLayer, tBase, uhiMin, uhiMax)
+
+    const provider = new Cesium.WebMapServiceImageryProvider({
+      url: `${GEOSERVER_URL}/uhi/wms`,
+      layers: layerConfig.wmsLayer,
+      parameters: {
+        service: 'WMS',
+        version: '1.1.1',
+        request: 'GetMap',
+        format: 'image/png',
+        transparent: true,
+        SLD_BODY: sldBody,
+        crs: 'EPSG:4326'
+      },
+      enablePickFeatures: true,
+      credit: 'UHI Brussels - FARI'
+    })
+
+    const imageryLayer = viewer.imageryLayers.addImageryProvider(provider)
+    imageryLayer.alpha = layerConfig.opacity
+    imageryLayer.show = true
+    wmsLayers.set(UHI_LAYER_ID, imageryLayer)
+  }
+
+  // ========================================
   // SWIPE / SPLIT LAYER MANAGEMENT
   // ========================================
 
@@ -812,14 +907,19 @@ export function useCesiumViewer(props, emit) {
   })
 
   // Watch layers for visibility and opacity changes
-  watch(() => props.layers.map(l => ({ id: l.id, visible: l.visible, opacity: l.opacity })), 
+  watch(() => props.layers.map(l => ({ id: l.id, visible: l.visible, opacity: l.opacity })),
     (newLayers) => {
       newLayers.forEach(layer => {
         const existingLayer = wmsLayers.has(layer.id)
         const layerConfig = props.layers.find(l => l.id === layer.id)
-        
+
         if (layer.visible && !existingLayer) {
-          addWmsLayer(layerConfig)
+          // Use dynamic SLD for UHI layer when tBase is available
+          if (layer.id === UHI_LAYER_ID && props.tBase != null && props.uhiMin != null && props.uhiMax != null) {
+            refreshUhiLayer(props.tBase, props.uhiMin, props.uhiMax)
+          } else {
+            addWmsLayer(layerConfig)
+          }
         } else if (!layer.visible && existingLayer) {
           removeWmsLayer(layer.id)
         } else if (layer.visible && existingLayer) {
@@ -829,6 +929,13 @@ export function useCesiumViewer(props, emit) {
     },
     { deep: true }
   )
+
+  // Watch T_base changes — refresh UHI colormap
+  watch(() => props.tBase, (newTBase) => {
+    if (newTBase != null && props.uhiMin != null && props.uhiMax != null) {
+      refreshUhiLayer(newTBase, props.uhiMin, props.uhiMax)
+    }
+  })
 
   // Watch drawing mode changes
   watch(() => props.drawingMode, (newMode) => {
