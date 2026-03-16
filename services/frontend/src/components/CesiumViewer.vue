@@ -20,10 +20,11 @@
     sunSimTime: { type: Number, default: 720 },
     tBase: { type: Number, default: null },
     uhiMin: { type: Number, default: null },
-    uhiMax: { type: Number, default: null }
+    uhiMax: { type: Number, default: null },
+    predictionOverlay: { type: Object, default: null }
   })
 
-  const emit = defineEmits(['geometry-drawn', 'drawing-active'])
+  const emit = defineEmits(['geometry-drawn', 'drawing-active', 'pixel-click'])
 
   const { cesiumContainer, getViewer, flyTo } = useCesiumViewer(props, emit)
 

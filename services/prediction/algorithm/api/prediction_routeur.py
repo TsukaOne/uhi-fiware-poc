@@ -44,46 +44,11 @@ def _get_orchestrator() -> PredictionOrchestrator:
     """
     FastAPI dependency — returns the app-scoped PredictionOrchestrator.
 
-    To mock in tests:
-        app.dependency_overrides[_get_orchestrator] = lambda: MockOrchestrator()
     """
     from main import prediction_orchestrator
     return prediction_orchestrator
+
 # ── Endpoints ─────────────────────────────────────────────────────────────────
-
-@router.post("/predict", response_model=PredictionResponse)
-async def predict_from_notification(
-    notification: Optional[NotificationPayload] = None,
-    orchestrator: PredictionOrchestrator = Depends(_get_orchestrator),
-):
-    """
-    Trigger the legacy NDVI-based prediction.
-
-    Called automatically by Orion subscriptions or manually.
-    Duplicate concurrent calls are deduplicated via an asyncio.Lock.
-    """
-    if notification:
-        logger.info(f"Notification received: {notification.id}")
-
-    if orchestrator.legacy_prediction_is_running:
-        logger.info("Prediction already running — skipping duplicate trigger")
-        return PredictionResponse(
-            status="skipped",
-            message="A prediction is already running. This notification was deduplicated.",
-        )
-
-    result = await orchestrator.run_legacy_prediction()
-    return PredictionResponse(**result)
-
-
-@router.post("/predict/manual", response_model=PredictionResponse)
-async def predict_manual(
-    orchestrator: PredictionOrchestrator = Depends(_get_orchestrator),
-):
-    """Manually trigger the legacy prediction (always runs, no deduplication)."""
-    result = await orchestrator.run_legacy_prediction()
-    return PredictionResponse(**result)
-
 
 @router.post("/predict/map", response_model=MapResponse)
 async def launch_xgb_prediction(
@@ -111,5 +76,3 @@ async def xgb_prediction_status(
 ):
     """Return current status of the XGBoost prediction job."""
     return MapStatusResponse(**orchestrator.xgb_prediction_state.snapshot())
-
-

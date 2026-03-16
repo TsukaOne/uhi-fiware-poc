@@ -38,135 +38,75 @@
         </div>
       </div>
 
-      <!-- Divider: land cover -->
-      <div class="panel-divider">
-        <span>Land Cover Breakdown</span>
+      <!-- Loading state -->
+      <div v-if="isLoading" class="loading-section">
+        <div class="loading-spinner"></div>
+        <span>Loading zone statistics...</span>
       </div>
 
-      <div class="stats-section">
-        <div class="stat-bar-row">
-          <div class="stat-bar-label">
-            <span class="stat-dot" style="background:#4ade80"></span>
-            Vegetation
-          </div>
-          <div class="stat-bar-track">
-            <div class="stat-bar-fill" style="width:34%; background:#4ade80"></div>
-          </div>
-          <span class="stat-bar-value">34%</span>
-        </div>
-        <div class="stat-bar-row">
-          <div class="stat-bar-label">
-            <span class="stat-dot" style="background:#94a3b8"></span>
-            Impervious
-          </div>
-          <div class="stat-bar-track">
-            <div class="stat-bar-fill" style="width:48%; background:#94a3b8"></div>
-          </div>
-          <span class="stat-bar-value">48%</span>
-        </div>
-        <div class="stat-bar-row">
-          <div class="stat-bar-label">
-            <span class="stat-dot" style="background:#f59e0b"></span>
-            Buildings
-          </div>
-          <div class="stat-bar-track">
-            <div class="stat-bar-fill" style="width:12%; background:#f59e0b"></div>
-          </div>
-          <span class="stat-bar-value">12%</span>
-        </div>
-        <div class="stat-bar-row">
-          <div class="stat-bar-label">
-            <span class="stat-dot" style="background:#38bdf8"></span>
-            Water
-          </div>
-          <div class="stat-bar-track">
-            <div class="stat-bar-fill" style="width:6%; background:#38bdf8"></div>
-          </div>
-          <span class="stat-bar-value">6%</span>
-        </div>
+      <!-- Error state -->
+      <div v-else-if="loadError" class="error-section">
+        <i class="fas fa-exclamation-triangle"></i>
+        <span>{{ loadError }}</span>
+        <button class="retry-btn" @click="fetchStats">Retry</button>
       </div>
 
-      <!-- Divider: climate metrics -->
-      <div class="panel-divider">
-        <span>Climate Metrics</span>
-      </div>
+      <!-- Real data -->
+      <template v-else-if="stats">
 
-      <div class="metrics-grid">
-        <div class="metric-card">
-          <div class="metric-icon"><i class="fas fa-thermometer-half"></i></div>
-          <div class="metric-body">
-            <span class="metric-value">28.4°C</span>
-            <span class="metric-label">Mean Surface Temp</span>
+        <!-- Divider: Input Features -->
+        <div class="panel-divider">
+          <span>Input Layer Statistics</span>
+        </div>
+
+        <div class="stats-section">
+          <div
+            v-for="layer in displayLayers"
+            :key="layer.key"
+            class="layer-stat-card"
+          >
+            <div class="layer-stat-header">
+              <i :class="layer.icon" :style="{ color: layer.color }"></i>
+              <span class="layer-stat-name">{{ layer.label }}</span>
+            </div>
+            <div class="layer-stat-values" v-if="stats.layer_stats[layer.key]">
+              <div class="layer-stat-item">
+                <span class="lsi-label">Mean</span>
+                <span class="lsi-value">{{ formatValue(stats.layer_stats[layer.key].mean, layer.unit) }}</span>
+              </div>
+              <div class="layer-stat-item">
+                <span class="lsi-label">Min</span>
+                <span class="lsi-value dim">{{ formatValue(stats.layer_stats[layer.key].min, layer.unit) }}</span>
+              </div>
+              <div class="layer-stat-item">
+                <span class="lsi-label">Max</span>
+                <span class="lsi-value dim">{{ formatValue(stats.layer_stats[layer.key].max, layer.unit) }}</span>
+              </div>
+              <div class="layer-stat-item">
+                <span class="lsi-label">Std</span>
+                <span class="lsi-value dim">{{ formatValue(stats.layer_stats[layer.key].std, layer.unit) }}</span>
+              </div>
+            </div>
+            <div v-else class="layer-stat-na">No data</div>
           </div>
         </div>
-        <div class="metric-card">
-          <div class="metric-icon hot"><i class="fas fa-temperature-arrow-up"></i></div>
-          <div class="metric-body">
-            <span class="metric-value">+3.1°C</span>
-            <span class="metric-label">UHI Intensity</span>
-          </div>
-        </div>
-        <div class="metric-card">
-          <div class="metric-icon green"><i class="fas fa-leaf"></i></div>
-          <div class="metric-body">
-            <span class="metric-value">0.31</span>
-            <span class="metric-label">Mean NDVI</span>
-          </div>
-        </div>
-        <div class="metric-card">
-          <div class="metric-icon blue"><i class="fas fa-droplet"></i></div>
-          <div class="metric-body">
-            <span class="metric-value">0.08</span>
-            <span class="metric-label">Mean NDWI</span>
-          </div>
-        </div>
-      </div>
 
-      <!-- Divider: elevation -->
-      <div class="panel-divider">
-        <span>Elevation</span>
-      </div>
-
-      <div class="stats-section">
-        <div class="elev-row">
-          <div class="elev-item">
-            <span class="elev-label">Min</span>
-            <span class="elev-value">42 m</span>
-          </div>
-          <div class="elev-item">
-            <span class="elev-label">Mean</span>
-            <span class="elev-value">58 m</span>
-          </div>
-          <div class="elev-item">
-            <span class="elev-label">Max</span>
-            <span class="elev-value">74 m</span>
-          </div>
+        <!-- Pixel count -->
+        <div class="pixel-count">
+          <i class="fas fa-th"></i>
+          {{ stats.pixel_count.toLocaleString() }} valid pixels
         </div>
-      </div>
 
-      <!-- Divider: risk -->
-      <div class="panel-divider">
-        <span>Heat Risk Assessment</span>
-      </div>
-
-      <div class="risk-section">
-        <div class="risk-badge high">
-          <i class="fas fa-exclamation-triangle"></i>
-          HIGH RISK
-        </div>
-        <p class="risk-desc">
-          This zone shows elevated urban heat island effect due to high impervious surface ratio and low vegetation cover. Consider adding green infrastructure.
-        </p>
-      </div>
-
-      <p class="mock-note">Data is for demonstration only. Connect to analysis API for real metrics.</p>
+      </template>
 
     </div>
   </Transition>
 </template>
 
 <script setup>
-  import { computed } from 'vue'
+  import { ref, computed, watch } from 'vue'
+
+  const PREDICTION_URL = '/prediction'
 
   const props = defineProps({
     visible: { type: Boolean, default: false },
@@ -174,6 +114,65 @@
   })
 
   defineEmits(['close'])
+
+  const isLoading = ref(false)
+  const loadError = ref(null)
+  const stats = ref(null)
+
+  const displayLayers = [
+    { key: 'ndvi',              label: 'NDVI',               icon: 'fas fa-leaf',                color: '#4ade80', unit: '' },
+    { key: 'ndwi',              label: 'NDWI',               icon: 'fas fa-droplet',             color: '#38bdf8', unit: '' },
+    { key: 'ndbi',              label: 'NDBI',               icon: 'fas fa-city',                color: '#94a3b8', unit: '' },
+    { key: 'lst',               label: 'Land Surface Temp',  icon: 'fas fa-thermometer-half',    color: '#f87171', unit: '°C' },
+    { key: 'dtm',               label: 'Elevation (DTM)',    icon: 'fas fa-mountain',            color: '#a78bfa', unit: 'm' },
+    { key: 'dsm',               label: 'Surface Model (DSM)',icon: 'fas fa-mountain-sun',        color: '#c084fc', unit: 'm' },
+    { key: 'building_height',   label: 'Building Height',    icon: 'fas fa-building',            color: '#f59e0b', unit: 'm' },
+    { key: 'imperviousness',    label: 'Imperviousness',     icon: 'fas fa-road',                color: '#6b7280', unit: '' },
+    { key: 'albedo',            label: 'Albedo',             icon: 'fas fa-sun',                 color: '#fbbf24', unit: '' },
+    { key: 'distance_to_water', label: 'Dist. to Water',     icon: 'fas fa-water',               color: '#06b6d4', unit: 'm' },
+    { key: 'distance_to_park',  label: 'Dist. to Park',      icon: 'fas fa-tree',                color: '#22c55e', unit: 'm' },
+  ]
+
+  function formatValue(val, unit) {
+    if (val === null || val === undefined) return '—'
+    const formatted = Math.abs(val) >= 100 ? val.toFixed(1) : val.toFixed(3)
+    return unit ? `${formatted} ${unit}` : formatted
+  }
+
+  async function fetchStats() {
+    if (!props.geometry?.geoJSON) return
+
+    isLoading.value = true
+    loadError.value = null
+    stats.value = null
+
+    try {
+      const resp = await fetch(`${PREDICTION_URL}/predict/zone/stats`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ geometry: props.geometry.geoJSON }),
+      })
+      if (!resp.ok) {
+        const text = await resp.text()
+        throw new Error(`${resp.status}: ${text}`)
+      }
+      stats.value = await resp.json()
+    } catch (err) {
+      console.error('Zone stats fetch failed:', err)
+      loadError.value = err.message || 'Failed to load zone statistics'
+    } finally {
+      isLoading.value = false
+    }
+  }
+
+  // Fetch when geometry changes or panel becomes visible
+  watch(
+    () => [props.visible, props.geometry],
+    ([vis, geom]) => {
+      if (vis && geom?.geoJSON) fetchStats()
+    },
+    { immediate: true }
+  )
 
   const areaKm2 = computed(() => {
     if (!props.geometry) return null
@@ -221,7 +220,6 @@
     scrollbar-color: rgba(34,211,160,0.3) transparent;
   }
 
-  /* Slide in from right */
   .panel-slide-enter-active,
   .panel-slide-leave-active {
     transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1), opacity 0.3s ease;
@@ -355,203 +353,134 @@
     background: rgba(255,255,255,0.07);
   }
 
-  /* Stat bars */
+  /* Loading */
+  .loading-section {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 10px;
+    padding: 30px 16px;
+    color: rgba(255,255,255,0.4);
+    font-size: 11px;
+  }
+
+  .loading-spinner {
+    width: 24px;
+    height: 24px;
+    border: 2px solid rgba(34, 211, 160, 0.2);
+    border-top-color: #22d3a0;
+    border-radius: 50%;
+    animation: spin 0.8s linear infinite;
+  }
+
+  @keyframes spin {
+    to { transform: rotate(360deg); }
+  }
+
+  /* Error */
+  .error-section {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 8px;
+    padding: 20px 16px;
+    color: rgba(248, 113, 113, 0.7);
+    font-size: 11px;
+    text-align: center;
+  }
+
+  .retry-btn {
+    padding: 6px 14px;
+    background: rgba(248, 113, 113, 0.1);
+    border: 1px solid rgba(248, 113, 113, 0.3);
+    border-radius: 6px;
+    color: #f87171;
+    font-size: 11px;
+    cursor: pointer;
+    transition: all 0.15s;
+  }
+  .retry-btn:hover {
+    background: rgba(248, 113, 113, 0.2);
+  }
+
+  /* Layer stats */
   .stats-section {
     padding: 0 16px 8px;
     display: flex;
     flex-direction: column;
-    gap: 8px;
+    gap: 6px;
   }
 
-  .stat-bar-row {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-  }
-
-  .stat-bar-label {
-    width: 90px;
-    font-size: 10px;
-    color: rgba(255,255,255,0.55);
-    display: flex;
-    align-items: center;
-    gap: 5px;
-    flex-shrink: 0;
-  }
-
-  .stat-dot {
-    width: 6px;
-    height: 6px;
-    border-radius: 50%;
-    display: inline-block;
-    flex-shrink: 0;
-  }
-
-  .stat-bar-track {
-    flex: 1;
-    height: 5px;
-    background: rgba(255,255,255,0.06);
-    border-radius: 3px;
-    overflow: hidden;
-  }
-
-  .stat-bar-fill {
-    height: 100%;
-    border-radius: 3px;
-    transition: width 0.4s ease;
-  }
-
-  .stat-bar-value {
-    width: 32px;
-    text-align: right;
-    font-size: 10px;
-    font-weight: 700;
-    color: rgba(255,255,255,0.6);
-    flex-shrink: 0;
-  }
-
-  /* Metrics grid */
-  .metrics-grid {
-    display: grid;
-    grid-template-columns: 1fr 1fr;
-    gap: 8px;
-    padding: 0 16px 8px;
-  }
-
-  .metric-card {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    padding: 10px;
+  .layer-stat-card {
+    padding: 8px 10px;
     background: rgba(255,255,255,0.03);
     border: 1px solid rgba(255,255,255,0.06);
     border-radius: 8px;
   }
 
-  .metric-icon {
-    width: 28px;
-    height: 28px;
-    border-radius: 6px;
+  .layer-stat-header {
     display: flex;
     align-items: center;
-    justify-content: center;
-    font-size: 12px;
-    background: rgba(34, 211, 160, 0.1);
-    color: #22d3a0;
-    flex-shrink: 0;
-  }
-  .metric-icon.hot {
-    background: rgba(248, 113, 113, 0.1);
-    color: #f87171;
-  }
-  .metric-icon.green {
-    background: rgba(74, 222, 128, 0.1);
-    color: #4ade80;
-  }
-  .metric-icon.blue {
-    background: rgba(56, 189, 248, 0.1);
-    color: #38bdf8;
+    gap: 7px;
+    margin-bottom: 6px;
   }
 
-  .metric-body {
+  .layer-stat-header i {
+    font-size: 11px;
+    width: 14px;
+    text-align: center;
+  }
+
+  .layer-stat-name {
+    font-size: 11px;
+    font-weight: 700;
+    color: rgba(255,255,255,0.7);
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+  }
+
+  .layer-stat-values {
+    display: grid;
+    grid-template-columns: 1fr 1fr 1fr 1fr;
+    gap: 4px;
+  }
+
+  .layer-stat-item {
     display: flex;
     flex-direction: column;
     gap: 1px;
-    min-width: 0;
   }
 
-  .metric-value {
-    font-size: 13px;
+  .lsi-label {
+    font-size: 8px;
+    color: rgba(255,255,255,0.3);
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+  }
+
+  .lsi-value {
+    font-size: 11px;
     font-weight: 700;
     color: white;
   }
 
-  .metric-label {
-    font-size: 8px;
-    color: rgba(255,255,255,0.4);
-    text-transform: uppercase;
-    letter-spacing: 0.06em;
-    line-height: 1.3;
+  .lsi-value.dim {
+    color: rgba(255,255,255,0.5);
+    font-weight: 600;
   }
 
-  /* Elevation row */
-  .elev-row {
-    display: flex;
-    justify-content: space-between;
-    gap: 8px;
+  .layer-stat-na {
+    font-size: 10px;
+    color: rgba(255,255,255,0.25);
+    font-style: italic;
   }
 
-  .elev-item {
-    flex: 1;
-    text-align: center;
-    padding: 8px;
-    background: rgba(255,255,255,0.03);
-    border: 1px solid rgba(255,255,255,0.06);
-    border-radius: 6px;
-  }
-
-  .elev-label {
-    display: block;
-    font-size: 9px;
+  .pixel-count {
+    padding: 8px 16px 16px;
+    font-size: 10px;
     color: rgba(255,255,255,0.35);
-    text-transform: uppercase;
-    letter-spacing: 0.08em;
-    margin-bottom: 3px;
-  }
-
-  .elev-value {
-    font-size: 13px;
-    font-weight: 700;
-    color: rgba(255,255,255,0.8);
-  }
-
-  /* Risk section */
-  .risk-section {
-    padding: 0 16px 8px;
-  }
-
-  .risk-badge {
-    display: inline-flex;
+    display: flex;
     align-items: center;
     gap: 6px;
-    padding: 5px 12px;
-    border-radius: 6px;
-    font-size: 10px;
-    font-weight: 700;
-    letter-spacing: 0.1em;
-    text-transform: uppercase;
-    margin-bottom: 8px;
-  }
-
-  .risk-badge.high {
-    background: rgba(248, 113, 113, 0.12);
-    border: 1px solid rgba(248, 113, 113, 0.3);
-    color: #f87171;
-  }
-
-  .risk-badge.moderate {
-    background: rgba(251, 191, 36, 0.12);
-    border: 1px solid rgba(251, 191, 36, 0.3);
-    color: #fbbf24;
-  }
-
-  .risk-badge.low {
-    background: rgba(74, 222, 128, 0.12);
-    border: 1px solid rgba(74, 222, 128, 0.3);
-    color: #4ade80;
-  }
-
-  .risk-desc {
-    margin: 0;
-    font-size: 10px;
-    color: rgba(255,255,255,0.4);
-    line-height: 1.6;
-  }
-
-  .mock-note {
-    margin: 8px 16px 16px;
-    font-size: 9px;
-    color: rgba(255,255,255,0.2);
-    line-height: 1.4;
   }
 </style>

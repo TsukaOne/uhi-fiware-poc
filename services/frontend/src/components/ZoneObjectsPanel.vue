@@ -136,9 +136,15 @@
               </button>
             </div>
           </div>
-          <button class="zop-clear-btn" @click="clearAllObjects">
-            <i class="fas fa-broom"></i> Clear All
-          </button>
+          <div class="zop-action-row">
+            <button class="zop-toggle-btn" @click="toggleObjectsVisibility" :title="objectsVisible ? 'Hide 3D objects' : 'Show 3D objects'">
+              <i :class="objectsVisible ? 'fas fa-eye' : 'fas fa-eye-slash'"></i>
+              {{ objectsVisible ? 'Hide' : 'Show' }}
+            </button>
+            <button class="zop-clear-btn" @click="clearAllObjects">
+              <i class="fas fa-broom"></i> Clear All
+            </button>
+          </div>
         </div>
       </div>
     </div>
@@ -158,6 +164,7 @@
   const emit = defineEmits(['close', 'objects-changed'])
 
   const placedObjects = ref([])
+  const objectsVisible = ref(true)
   let placedEntities = [] // Cesium entity references for cleanup
 
   // Object type configs: icon color, default size, label
@@ -279,6 +286,17 @@
 
     emit('objects-changed', [])
     props.cesiumViewer.scene.requestRender()
+  }
+
+  // Toggle visibility of all placed 3D entities
+  function toggleObjectsVisibility() {
+    objectsVisible.value = !objectsVisible.value
+    placedEntities.forEach(entity => {
+      entity.show = objectsVisible.value
+    })
+    if (props.cesiumViewer) {
+      props.cesiumViewer.scene.requestRender()
+    }
   }
 
   // Handle drop on the Cesium canvas
@@ -531,9 +549,34 @@
     color: #f87171;
   }
 
-  .zop-clear-btn {
+  .zop-action-row {
+    display: flex;
+    gap: 6px;
     margin-top: 8px;
-    width: 100%;
+  }
+
+  .zop-toggle-btn {
+    flex: 1;
+    padding: 7px;
+    background: rgba(34, 211, 160, 0.08);
+    border: 1px solid rgba(34, 211, 160, 0.2);
+    border-radius: 6px;
+    color: rgba(34, 211, 160, 0.7);
+    font-size: 11px;
+    cursor: pointer;
+    transition: all 0.15s;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+  }
+  .zop-toggle-btn:hover {
+    background: rgba(34, 211, 160, 0.15);
+    color: #22d3a0;
+  }
+
+  .zop-clear-btn {
+    flex: 1;
     padding: 7px;
     background: rgba(255, 100, 100, 0.08);
     border: 1px solid rgba(255, 100, 100, 0.2);

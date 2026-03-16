@@ -2,12 +2,11 @@
   <div class="tbase-panel">
     <div class="tbase-header">
       <i class="fas fa-thermometer-half"></i>
-      <span class="tbase-title">T base reference</span>
+      <span class="tbase-title">Live Temperature</span>
       <button
-        v-if="isManual"
         class="tbase-sync-btn"
-        @click="syncVlinder"
-        title="Sync with VLINDER"
+        @click="fetchTBase"
+        title="Refresh from VLINDER"
       >
         <i class="fas fa-sync-alt"></i>
       </button>
@@ -21,20 +20,6 @@
           {{ sourceLabel }}
         </span>
       </div>
-
-      <div class="tbase-slider-row">
-        <span class="slider-bound">5°C</span>
-        <input
-          type="range"
-          min="5"
-          max="45"
-          step="0.5"
-          :value="tBase"
-          @input="onSliderInput(Number($event.target.value))"
-          class="tbase-slider"
-        />
-        <span class="slider-bound">45°C</span>
-      </div>
     </div>
   </div>
 </template>
@@ -42,14 +27,10 @@
 <script setup>
 import { ref, computed, onMounted, onBeforeUnmount } from 'vue'
 
-const PREDICTION_URL = window.location.port === '5173'
-  ? '/prediction'
-  : '/prediction'
+const PREDICTION_URL = '/prediction'
 
 const props = defineProps({
   modelValue: { type: Number, default: 15.0 },
-  uhiMin: { type: Number, default: null },
-  uhiMax: { type: Number, default: null }
 })
 
 const emit = defineEmits(['update:modelValue'])
@@ -59,26 +40,16 @@ const tBase = computed({
   set: (v) => emit('update:modelValue', v)
 })
 
-const isManual = ref(false)
 const isFallback = ref(false)
 const stationName = ref('')
 let pollTimer = null
 
-const sourceIcon = computed(() =>
-  isManual.value ? 'fas fa-sliders-h' : 'fas fa-satellite-dish'
-)
+const sourceIcon = computed(() => 'fas fa-satellite-dish')
 
 const sourceLabel = computed(() => {
-  if (isManual.value) return 'Manual'
   if (isFallback.value) return `${stationName.value || 'VLINDER'} (cached)`
   return stationName.value || 'VLINDER'
 })
-
-function onSliderInput(val) {
-  isManual.value = true
-  stopPolling()
-  tBase.value = val
-}
 
 async function fetchTBase() {
   try {
@@ -87,19 +58,11 @@ async function fetchTBase() {
     const data = await resp.json()
     stationName.value = data.station_name || data.station_id
     isFallback.value = data.fallback
-    if (!isManual.value) {
-      tBase.value = data.value
-    }
+    tBase.value = data.value
   } catch (err) {
     console.warn('VLINDER fetch failed:', err)
     isFallback.value = true
   }
-}
-
-function syncVlinder() {
-  isManual.value = false
-  fetchTBase()
-  startPolling()
 }
 
 function startPolling() {

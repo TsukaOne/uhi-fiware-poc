@@ -115,4 +115,3 @@ async def clear_training_cache(
         return {"status": "cleared", "path": str(cache_file)}
 
     return {"status": "nothing_to_clear", "path": str(cache_file)}
-

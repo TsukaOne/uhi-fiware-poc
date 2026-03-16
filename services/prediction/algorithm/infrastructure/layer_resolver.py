@@ -35,20 +35,17 @@ class LayerResolver:
         """
         Resolve all layers. Raises if any layer is missing or its file absent.
 
-        Parameters
-        ----------
-        layer_entity_map : {layer_name: entity_id}
-
-        Returns
-        -------
-        {layer_name: local_file_path}
         """
         logger.info(f"Resolving {len(layer_entity_map)} required layer(s) from Orion…")
         paths: dict[str, Path] = {}
 
+        # Resolve each layer in parallel to speed up Orion queries and disk checks.
         for layer_name, entity_id in layer_entity_map.items():
+            # Fetch the entity from Orion
             entity = await self._orion.get_entity(entity_id)
+            # Extract and validate the file path
             path = self._extract_and_validate_path(entity)
+            # Store the path in the result dict
             paths[layer_name] = path
             logger.info(f"  {layer_name:<20} → {path}")
 
@@ -62,16 +59,18 @@ class LayerResolver:
         """
         Resolve required layers (raises on failure) and optional layers
         (logs a warning and skips on failure).
-
-        Used by the legacy prediction endpoint which requires NDVI
-        but treats NDWI as non-blocking.
         """
+        # First resolve required layers — if any of these fail, we want to raise an error
         paths = await self.resolve_required(required)
 
+        # The resolver is now free to log warnings about missing files
         for layer_name, entity_id in optional.items():
             try:
+                # Fetch the entity from Orion
                 entity = await self._orion.get_entity(entity_id)
+                # Extract and validate the file path
                 path = self._extract_and_validate_path(entity)
+                # Store the path in the paths result dict
                 paths[layer_name] = path
                 logger.info(f"  {layer_name:<20} → {path} (optional)")
             except OrionEntityNotFound:
@@ -83,15 +82,12 @@ class LayerResolver:
 
         return paths
 
+    # ───────── Helpers ────────────────────────────────────────────────────────────────────────
+
     @staticmethod
     def _extract_and_validate_path(entity: dict) -> Path:
         """
         Extract filePath from an NGSI-LD entity and verify it exists on disk.
-
-        Raises
-        ------
-        MissingFilePathError    — entity has no filePath property
-        EntityFileNotFoundError — file does not exist on disk
         """
         entity_id = entity.get("id", "?")
         raw_value = entity.get("filePath", {}).get("value")

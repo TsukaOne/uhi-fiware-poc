@@ -4,8 +4,6 @@ Orion Publisher — builds and registers result entities back into Orion-LD.
 Single responsibility: construct NGSI-LD entity payloads for outputs
 (predictions, trained models) and delegate persistence to OrionClient.
 
-Keeps entity schema knowledge in one place.
-The upsert HTTP logic lives in OrionClient, not here.
 """
 from __future__ import annotations
 
@@ -21,7 +19,7 @@ from algorithm.infrastructure.orion_client import OrionClient
 
 logger = logging.getLogger(__name__)
 
-_HEATMAP_ENTITY_ID = "urn:ngsi-ld:UHIHeatMap:brussels:2024"
+ # Constants for entity IDs
 _XGB_HEATMAP_ENTITY_ID = "urn:ngsi-ld:UHIHeatMap:XGBoost:brussels:2024"
 _MODEL_ENTITY_ID = "urn:ngsi-ld:UHIModel:XGBoost:brussels:2024"
 
@@ -36,33 +34,8 @@ class OrionPublisher:
 
     def __init__(self, orion_client: OrionClient) -> None:
         self._orion = orion_client
-
-    async def publish_legacy_prediction(
-        self,
-        prediction_path: Path,
-        input_entity_ids: list[str],
-    ) -> str:
-        """Register the NDVI-based placeholder prediction as UHIHeatMap."""
-        entity = {
-            "id": _HEATMAP_ENTITY_ID,
-            "type": "UHIHeatMap",
-            "name": {"type": "Property", "value": "UHI Prediction Brussels 2024"},
-            "modelVersion": {"type": "Property", "value": "placeholder_v1"},
-            "dateGenerated": {
-                "type": "Property",
-                "value": datetime.now(timezone.utc).isoformat() + "Z",
-            },
-            "inputLayers": {"type": "Property", "value": input_entity_ids},
-            "filePath": {"type": "Property", "value": str(prediction_path)},
-            "geoserverLayer": {"type": "Property", "value": "uhi:uhi_prediction"},
-            "publishToGeoserver": {"type": "Property", "value": True},
-            "valueRange": {
-                "type": "Property",
-                "value": {"min": 0, "max": 1, "description": "0=cool, 1=hot"},
-            },
-        }
-        self._attach_bounding_box(entity, prediction_path)
-        return await self._orion.upsert_entity(entity)
+    
+    # ── Publishers ───────────────────────────────────────────────────────────────
 
     async def publish_xgb_prediction(
         self,
@@ -135,6 +108,8 @@ class OrionPublisher:
             "metrics": {"type": "Property", "value": metrics},
         }
         return await self._orion.upsert_entity(entity)
+
+    # — Helpers ——————————————————————————————————————————————————————————————
 
     @staticmethod
     def _attach_bounding_box(entity: dict, raster_path: Path) -> None:

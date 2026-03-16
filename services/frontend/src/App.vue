@@ -66,9 +66,28 @@
 
       <div class="toolbox-divider"></div>
 
-      <button class="tool-btn" title="Metadata">
-        <i class="fas fa-circle-info"></i>
-      </button>
+      <!-- METADATA BUTTON WITH DROPDOWN -->
+      <div class="predict-container">
+        <button
+          class="tool-btn"
+          title="Zone Metadata"
+          @click="toggleMetadataMenu"
+          :class="{ active: showMetadataMenu || metadataMode }"
+        >
+          <i class="fas fa-circle-info"></i>
+        </button>
+
+        <div v-if="showMetadataMenu" class="predict-menu">
+          <button class="predict-menu-item" @click="startMetadataPolygon">
+            <i class="fas fa-draw-polygon"></i>
+            Draw Polygon
+          </button>
+          <button class="predict-menu-item" @click="startMetadataBBox">
+            <i class="fas fa-vector-square"></i>
+            Draw Bounding Box
+          </button>
+        </div>
+      </div>
 
       <!-- PREDICT BUTTON WITH DROPDOWN MENU -->
       <div class="predict-container">
@@ -100,9 +119,32 @@
         </div>
       </div>
 
-      <button class="tool-btn" title="Download Data">
-        <i class="fas fa-download"></i>
-      </button>
+      <!-- DOWNLOAD BUTTON WITH DROPDOWN -->
+      <div class="predict-container">
+        <button
+          class="tool-btn"
+          title="Download Data"
+          @click="toggleDownloadMenu"
+          :class="{ active: showDownloadMenu }"
+        >
+          <i class="fas fa-download"></i>
+        </button>
+
+        <div v-if="showDownloadMenu" class="predict-menu download-menu">
+          <button class="predict-menu-item" @click="downloadFullMap">
+            <i class="fas fa-globe"></i>
+            Full Map (UHI)
+          </button>
+          <button class="predict-menu-item" @click="startDownloadZonePolygon">
+            <i class="fas fa-draw-polygon"></i>
+            Crop Polygon
+          </button>
+          <button class="predict-menu-item" @click="startDownloadZoneBBox">
+            <i class="fas fa-vector-square"></i>
+            Crop Bounding Box
+          </button>
+        </div>
+      </div>
 
       <button class="tool-btn" :class="{ active: swipeEnabled }" title="Swipe Content" @click="handleSwipeClick">
         <i class="fas fa-arrows-left-right"></i>
@@ -196,13 +238,14 @@
         <div class="wf-arrow">→</div>
         <div class="workflow-step" :class="{ active: workflowStep === 1, done: workflowStep >= 2 }">
           <div class="wf-num">2</div>
-          <span>Zone Preview</span>
+          <span>Place Objects</span>
           <i class="fas fa-check-circle" v-if="workflowStep >= 2"></i>
         </div>
         <div class="wf-arrow">→</div>
-        <div class="workflow-step" :class="{ active: workflowStep === 2 }">
+        <div class="workflow-step" :class="{ active: workflowStep === 2, done: workflowStep >= 3 }">
           <div class="wf-num">3</div>
-          <span>Configure & Predict</span>
+          <span>Predict</span>
+          <i class="fas fa-check-circle" v-if="workflowStep >= 3"></i>
         </div>
 
         <div class="wf-actions">
@@ -212,14 +255,14 @@
           <button
             v-if="workflowStep === 1"
             class="wf-btn primary"
-            @click="confirmPreviewAndOpenPanel"
+            @click="goToPredict"
           >
-            Configure Parameters <i class="fas fa-arrow-right"></i>
+            Predict <i class="fas fa-arrow-right"></i>
           </button>
           <button
-            v-if="workflowStep === 2"
+            v-if="workflowStep >= 2"
             class="wf-btn secondary"
-            @click="backToPreview"
+            @click="backToObjects"
           >
             <i class="fas fa-arrow-left"></i> Back
           </button>
@@ -245,14 +288,17 @@
       :visible="showZoneInfoPanel"
       :geometry="activeGeometry"
       @close="showZoneInfoPanel = false"
+      ref="zoneInfoPanelRef"
     />
 
     <!-- ======================================== -->
-    <!-- STEP 3 : PREDICTION PANEL (slide-in)    -->
+    <!-- PREDICTION PANEL (replaces info panel)  -->
     <!-- ======================================== -->
     <PredictionPanel
       :visible="showPredictionPanel"
       :geometry="activeGeometry"
+      :zoneObjects="zoneObjects"
+      :zoneStats="zoneStatsData"
       @close="closePredictionPanel"
       @predict="onPredict"
     />
@@ -275,8 +321,20 @@
       :tBase="tBase"
       :uhiMin="uhiMin"
       :uhiMax="uhiMax"
-      @geometry-drawn="onGeometryDrawn"
+      :predictionOverlay="predictionOverlay"
+      @geometry-drawn="onGeometryDrawnRouter"
       @drawing-active="onDrawingActive"
+      @pixel-click="onPixelClick"
+    />
+
+    <!-- PIXEL INFO PANEL (click on map) -->
+    <PixelInfoPanel
+      :visible="showPixelInfo"
+      :pixelData="pixelData"
+      :isLoading="pixelLoading"
+      :screenX="pixelScreenX"
+      :screenY="pixelScreenY"
+      @close="showPixelInfo = false"
     />
 
     <!-- SWIPE DIVIDER -->
@@ -315,8 +373,6 @@
     <TBaseSlider
       v-if="showTBaseSlider"
       v-model="tBase"
-      :uhiMin="uhiMin"
-      :uhiMax="uhiMax"
     />
   </div>
 </template>
@@ -330,6 +386,7 @@
   import PredictionPanel from './components/PredictionPanel.vue'
   import ZoneObjectsPanel from './components/ZoneObjectsPanel.vue'
   import ZoneInfoPanel from './components/ZoneInfoPanel.vue'
+  import PixelInfoPanel from './components/PixelInfoPanel.vue'
   import TBaseSlider from './components/TBaseSlider.vue'
   const {
     viewMode, showLayers, layers, activeLayers, buildingVisible, treeVisible,
@@ -408,6 +465,8 @@
     if (toolbox && !toolbox.contains(e.target)) {
       showPredictMenu.value = false
       showSunSimPanel.value = false
+      showMetadataMenu.value = false
+      showDownloadMenu.value = false
     }
   }
 
@@ -494,43 +553,50 @@
   const activeGeometry = ref(null)       // geometry from drawing
   const showSelectionOverlay = ref(false) // SVG overlay
   const showWorkflowBar = ref(false)      // bottom bar guiding user
-  const showPredictionPanel = ref(false)  // Params panel
-  const workflowStep = ref(0)             // 0=none, 1=preview, 2=params
+  const showPredictionPanel = ref(false)  // Prediction panel
+  const workflowStep = ref(0)             // 0=none, 1=objects, 2=predict, 3=done
   const showZoneObjectsPanel = ref(false) // Zone objects drag-and-drop panel
   const showZoneInfoPanel = ref(false)    // Zone info/data panel (right side)
   const zoneObjects = ref([])             // placed 3D objects
+  const predictionOverlay = ref(null)     // {image_base64, bounds} for Cesium overlay
+  const zoneInfoPanelRef = ref(null)      // ref to ZoneInfoPanel
+  const zoneStatsData = ref(null)         // zone stats from ZoneInfoPanel for comparison
 
 
-  function onGeometryDrawn(geometry) {
+  function onGeometryDrawnPredict(geometry) {
     addGeometry(geometry)
     stopDrawing()
     activeGeometry.value = geometry
     showSelectionOverlay.value = true
     showWorkflowBar.value = true
     workflowStep.value = 1
-    // Auto-open side panels
+    // Auto-open side panels: objects (left) + info (right)
     showZoneObjectsPanel.value = true
     showZoneInfoPanel.value = true
+    showPredictionPanel.value = false
   }
 
-  // User confirmed preview → open prediction panel, hide info panel
-  function confirmPreviewAndOpenPanel() {
+  // Go to predict step: open prediction panel, hide info panel
+  function goToPredict() {
     workflowStep.value = 2
     showPredictionPanel.value = true
     showZoneInfoPanel.value = false
   }
 
-  // Back from panel to preview step
-  function backToPreview() {
+  // Back from prediction to objects step
+  function backToObjects() {
     workflowStep.value = 1
     showPredictionPanel.value = false
     showZoneInfoPanel.value = true
   }
+
   // Close prediction panel
   function closePredictionPanel() {
     showPredictionPanel.value = false
     workflowStep.value = 1
+    showZoneInfoPanel.value = true
   }
+
   // Cancel entire workflow
   function cancelWorkflow() {
     showSelectionOverlay.value = false
@@ -541,6 +607,8 @@
     workflowStep.value = 0
     activeGeometry.value = null
     zoneObjects.value = []
+    predictionOverlay.value = null
+    zoneStatsData.value = null
   }
 
   function onZoneObjectsChanged(objects) {
@@ -549,8 +617,176 @@
 
   // Called when prediction panel emits 'predict'
   function onPredict(payload) {
-    console.log('→ Prediction launched:', payload)
-    // TODO: call your API here
+    if (payload.result) {
+      predictionOverlay.value = {
+        image_base64: payload.result.image_base64,
+        bounds: payload.result.bounds,
+        stats: payload.result.stats,
+      }
+      workflowStep.value = 3
+    }
+  }
+
+  // ========================================
+  // PIXEL INFO (click on map)
+  // ========================================
+  const PREDICTION_URL = '/prediction'
+  const showPixelInfo = ref(false)
+  const pixelData = ref(null)
+  const pixelLoading = ref(false)
+  const pixelScreenX = ref(0)
+  const pixelScreenY = ref(0)
+
+  async function onPixelClick({ lon, lat, screenX, screenY }) {
+    // Don't show pixel info during workflows
+    if (isWorkflowActive.value || metadataMode.value || downloadMode.value) return
+
+    pixelScreenX.value = screenX
+    pixelScreenY.value = screenY
+    showPixelInfo.value = true
+    pixelLoading.value = true
+    pixelData.value = { lon, lat, values: {} }
+
+    try {
+      const resp = await fetch(`${PREDICTION_URL}/predict/pixel/value`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ lon, lat }),
+      })
+      if (!resp.ok) throw new Error(`${resp.status}`)
+      const data = await resp.json()
+      pixelData.value = data
+    } catch (err) {
+      console.error('Pixel value fetch failed:', err)
+      pixelData.value = { lon, lat, values: {} }
+    } finally {
+      pixelLoading.value = false
+    }
+  }
+
+  // ========================================
+  // METADATA MODE (draw zone → show stats)
+  // ========================================
+  const showMetadataMenu = ref(false)
+  const metadataMode = ref(false)
+
+  function toggleMetadataMenu() {
+    showMetadataMenu.value = !showMetadataMenu.value
+    showPredictMenu.value = false
+    showDownloadMenu.value = false
+  }
+
+  function startMetadataPolygon() {
+    metadataMode.value = true
+    showMetadataMenu.value = false
+    startDrawingPolygon()
+  }
+
+  function startMetadataBBox() {
+    metadataMode.value = true
+    showMetadataMenu.value = false
+    startDrawingBoundingBox()
+  }
+
+  // ========================================
+  // DOWNLOAD MODE (full or crop)
+  // ========================================
+  const showDownloadMenu = ref(false)
+  const downloadMode = ref(false)
+
+  function toggleDownloadMenu() {
+    showDownloadMenu.value = !showDownloadMenu.value
+    showPredictMenu.value = false
+    showMetadataMenu.value = false
+  }
+
+  async function downloadFullMap() {
+    showDownloadMenu.value = false
+    try {
+      const resp = await fetch(`${PREDICTION_URL}/predict/download`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ layer: 'uhi', geometry: null }),
+      })
+      if (!resp.ok) throw new Error(`Download failed: ${resp.status}`)
+      const blob = await resp.blob()
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = 'uhi_full.tif'
+      a.click()
+      URL.revokeObjectURL(url)
+    } catch (err) {
+      console.error('Download failed:', err)
+      alert('Download failed: ' + err.message)
+    }
+  }
+
+  function startDownloadZonePolygon() {
+    downloadMode.value = true
+    showDownloadMenu.value = false
+    startDrawingPolygon()
+  }
+
+  function startDownloadZoneBBox() {
+    downloadMode.value = true
+    showDownloadMenu.value = false
+    startDrawingBoundingBox()
+  }
+
+  // ========================================
+  // GEOMETRY DRAWN HANDLER (routes to correct mode)
+  // ========================================
+  function onGeometryDrawnRouter(geometry) {
+    if (metadataMode.value) {
+      // Metadata mode: show zone info panel with stats
+      addGeometry(geometry)
+      stopDrawing()
+      metadataMode.value = false
+      activeGeometry.value = geometry
+      showZoneInfoPanel.value = true
+      showSelectionOverlay.value = true
+      showWorkflowBar.value = true
+      workflowStep.value = 1
+      // Don't open objects panel in metadata mode
+      showZoneObjectsPanel.value = false
+      showPredictionPanel.value = false
+      return
+    }
+
+    if (downloadMode.value) {
+      // Download mode: crop and download
+      addGeometry(geometry)
+      stopDrawing()
+      downloadMode.value = false
+      downloadCroppedMap(geometry)
+      return
+    }
+
+    // Normal predict workflow
+    onGeometryDrawnPredict(geometry)
+  }
+
+  async function downloadCroppedMap(geometry) {
+    if (!geometry?.geoJSON) return
+    try {
+      const resp = await fetch(`${PREDICTION_URL}/predict/download`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ layer: 'uhi', geometry: geometry.geoJSON }),
+      })
+      if (!resp.ok) throw new Error(`Download failed: ${resp.status}`)
+      const blob = await resp.blob()
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = 'uhi_crop.tif'
+      a.click()
+      URL.revokeObjectURL(url)
+    } catch (err) {
+      console.error('Download failed:', err)
+      alert('Download failed: ' + err.message)
+    }
   }
 
   // ========================================

@@ -16,6 +16,9 @@ const wmsLayers = new Map()
 // Drawing state
 let drawingMode = null
 
+// Prediction overlay state
+let predictionOverlayLayer = null
+
 // Swipe state
 let swipeActive = false
 const preSwipeLayerShow = new Map()
@@ -644,101 +647,6 @@ export function useCesiumViewer(props, emit) {
   }
 
   // ========================================
-  // UHI DYNAMIC SLD (T_base-dependent colormap)
-  // ========================================
-
-  const UHI_LAYER_ID = 'uhi_prediction'
-
-  // Fixed absolute temperature color scale
-  const TEMP_COLORS = [
-    { temp: 10, color: '#313695' },
-    { temp: 15, color: '#4575b4' },
-    { temp: 20, color: '#74add1' },
-    { temp: 25, color: '#fee090' },
-    { temp: 30, color: '#f46d43' },
-    { temp: 35, color: '#d73027' },
-    { temp: 40, color: '#a50026' },
-    { temp: 45, color: '#67001f' },
-  ]
-
-  function tempToPixel(tempAbs, tBase, uhiMin, uhiMax) {
-    // T_abs = tBase + (pixel / 254) * (uhiMax - uhiMin) + uhiMin
-    // => pixel = (T_abs - tBase - uhiMin) / (uhiMax - uhiMin) * 254
-    const p = (tempAbs - tBase - uhiMin) / (uhiMax - uhiMin) * 254
-    return Math.max(0, Math.min(254, Math.round(p)))
-  }
-
-  function buildUhiSldBody(wmsLayerName, tBase, uhiMin, uhiMax) {
-    const entries = TEMP_COLORS
-      .map(({ temp, color }) => {
-        const qty = tempToPixel(temp, tBase, uhiMin, uhiMax)
-        return `          <ColorMapEntry color="${color}" quantity="${qty}" label="${temp}°C"/>`
-      })
-      .join('\n')
-
-    return `<?xml version="1.0" encoding="UTF-8"?>
-<StyledLayerDescriptor version="1.0.0"
-  xsi:schemaLocation="http://www.opengis.net/sld StyledLayerDescriptor.xsd"
-  xmlns="http://www.opengis.net/sld"
-  xmlns:ogc="http://www.opengis.net/ogc"
-  xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
-  <NamedLayer>
-    <Name>${wmsLayerName}</Name>
-    <UserStyle>
-      <Title>UHI Dynamic</Title>
-      <FeatureTypeStyle>
-        <Rule>
-          <RasterSymbolizer>
-            <ColorMap type="ramp">
-${entries}
-              <ColorMapEntry color="#000000" quantity="255" opacity="0" label="nodata"/>
-            </ColorMap>
-          </RasterSymbolizer>
-        </Rule>
-      </FeatureTypeStyle>
-    </UserStyle>
-  </NamedLayer>
-</StyledLayerDescriptor>`
-  }
-
-  function refreshUhiLayer(tBase, uhiMin, uhiMax) {
-    if (!viewer || tBase == null || uhiMin == null || uhiMax == null) return
-
-    const layerConfig = props.layers.find(l => l.id === UHI_LAYER_ID)
-    if (!layerConfig || !layerConfig.visible) return
-
-    // Remove old layer
-    if (wmsLayers.has(UHI_LAYER_ID)) {
-      const old = wmsLayers.get(UHI_LAYER_ID)
-      viewer.imageryLayers.remove(old)
-      wmsLayers.delete(UHI_LAYER_ID)
-    }
-
-    const sldBody = buildUhiSldBody(layerConfig.wmsLayer, tBase, uhiMin, uhiMax)
-
-    const provider = new Cesium.WebMapServiceImageryProvider({
-      url: `${GEOSERVER_URL}/uhi/wms`,
-      layers: layerConfig.wmsLayer,
-      parameters: {
-        service: 'WMS',
-        version: '1.1.1',
-        request: 'GetMap',
-        format: 'image/png',
-        transparent: true,
-        SLD_BODY: sldBody,
-        crs: 'EPSG:4326'
-      },
-      enablePickFeatures: true,
-      credit: 'UHI Brussels - FARI'
-    })
-
-    const imageryLayer = viewer.imageryLayers.addImageryProvider(provider)
-    imageryLayer.alpha = layerConfig.opacity
-    imageryLayer.show = true
-    wmsLayers.set(UHI_LAYER_ID, imageryLayer)
-  }
-
-  // ========================================
   // SWIPE / SPLIT LAYER MANAGEMENT
   // ========================================
 
@@ -914,12 +822,7 @@ ${entries}
         const layerConfig = props.layers.find(l => l.id === layer.id)
 
         if (layer.visible && !existingLayer) {
-          // Use dynamic SLD for UHI layer when tBase is available
-          if (layer.id === UHI_LAYER_ID && props.tBase != null && props.uhiMin != null && props.uhiMax != null) {
-            refreshUhiLayer(props.tBase, props.uhiMin, props.uhiMax)
-          } else {
-            addWmsLayer(layerConfig)
-          }
+          addWmsLayer(layerConfig)
         } else if (!layer.visible && existingLayer) {
           removeWmsLayer(layer.id)
         } else if (layer.visible && existingLayer) {
@@ -929,13 +832,6 @@ ${entries}
     },
     { deep: true }
   )
-
-  // Watch T_base changes — refresh UHI colormap
-  watch(() => props.tBase, (newTBase) => {
-    if (newTBase != null && props.uhiMin != null && props.uhiMax != null) {
-      refreshUhiLayer(newTBase, props.uhiMin, props.uhiMax)
-    }
-  })
 
   // Watch drawing mode changes
   watch(() => props.drawingMode, (newMode) => {
@@ -975,11 +871,114 @@ ${entries}
   })
 
   // ========================================
+  // PREDICTION OVERLAY (SingleTileImageryProvider)
+  // ========================================
+
+  async function setPredictionOverlay(overlay) {
+    // Remove previous overlay
+    if (predictionOverlayLayer) {
+      viewer.imageryLayers.remove(predictionOverlayLayer)
+      predictionOverlayLayer = null
+    }
+
+    if (!overlay || !viewer) return
+
+    const { image_base64, bounds, stats } = overlay
+    const dataUrl = `data:image/png;base64,${image_base64}`
+    const rect = Cesium.Rectangle.fromDegrees(
+      bounds.west, bounds.south, bounds.east, bounds.north
+    )
+
+    try {
+      // Use fromUrl (async) — modern Cesium API that auto-detects tile dimensions
+      const provider = await Cesium.SingleTileImageryProvider.fromUrl(dataUrl, {
+        rectangle: rect,
+        tileWidth: stats?.image_width || 256,
+        tileHeight: stats?.image_height || 256,
+      })
+
+      predictionOverlayLayer = viewer.imageryLayers.addImageryProvider(provider)
+      predictionOverlayLayer.alpha = 0.85
+      predictionOverlayLayer.show = true
+    } catch (err) {
+      console.error('Failed to create prediction overlay:', err)
+    }
+  }
+
+  // Watch prediction overlay changes
+  watch(() => props.predictionOverlay, (overlay) => {
+    setPredictionOverlay(overlay)
+  }, { deep: true })
+
+  // ========================================
+  // PIXEL CLICK HANDLER (query real values)
+  // ========================================
+
+  let pixelClickHandler = null
+
+  function setupPixelClickHandler() {
+    if (!viewer) return
+    pixelClickHandler = new Cesium.ScreenSpaceEventHandler(viewer.scene.canvas)
+
+    pixelClickHandler.setInputAction((click) => {
+      // Don't intercept clicks during drawing mode
+      if (isDrawing) return
+
+      const screenPos = click.position
+      let cartesian = viewer.scene.pickPosition(screenPos)
+      if (!Cesium.defined(cartesian)) {
+        const ray = viewer.camera.getPickRay(screenPos)
+        if (ray) cartesian = viewer.scene.globe.pick(ray, viewer.scene)
+      }
+      if (!Cesium.defined(cartesian)) {
+        cartesian = viewer.camera.pickEllipsoid(screenPos, viewer.scene.globe.ellipsoid)
+      }
+      if (!Cesium.defined(cartesian)) return
+
+      const cartographic = Cesium.Cartographic.fromCartesian(cartesian)
+      const lon = Cesium.Math.toDegrees(cartographic.longitude)
+      const lat = Cesium.Math.toDegrees(cartographic.latitude)
+
+      emit('pixel-click', {
+        lon,
+        lat,
+        screenX: screenPos.x,
+        screenY: screenPos.y,
+      })
+    }, Cesium.ScreenSpaceEventType.LEFT_CLICK)
+  }
+
+  // Disable default Cesium info box behavior for WMS layers
+  onMounted(() => {
+    // Small delay to let viewer initialize
+    setTimeout(() => {
+      if (viewer) {
+        setupPixelClickHandler()
+        // Suppress default infoBox for imagery clicks
+        viewer.selectedEntityChanged.addEventListener(() => {
+          viewer.selectedEntity = undefined
+        })
+      }
+    }, 1000)
+  })
+
+  // ========================================
   // CLEANUP
   // ========================================
 
   function cleanupCesium() {
+    if (pixelClickHandler) {
+      pixelClickHandler.destroy()
+      pixelClickHandler = null
+    }
+
     if (viewer) {
+      // Clear prediction overlay
+      if (predictionOverlayLayer) {
+        viewer.imageryLayers.remove(predictionOverlayLayer)
+        predictionOverlayLayer = null
+      }
+
       // Clear WMS layers
       wmsLayers.forEach((imageryLayer) => {
         viewer.imageryLayers.remove(imageryLayer)

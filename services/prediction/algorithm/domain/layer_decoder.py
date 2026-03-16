@@ -1,26 +1,5 @@
 """
-Layer Decoder — décode les rasters COG uint8 vers leurs valeurs physiques originales.
-Conventions d'encodage (définies dans l'ingestion, respectées ici) :
-
-  NDVI / NDWI  (indices spectraux [-1, 1]) :
-    encode : uint8 = (valeur + 1) / 2 * 254    (255 = nodata)
-    decode : valeur = (uint8 / 254) * 2 - 1
-
-  DTM  (élévation en mètres, range variable) :
-    L'ingestion encode en uint8 via process_dtm.
-    On lit les métadonnées VALUE_MIN / VALUE_MAX pour reconstruire.
-    Si absentes : fallback sur la plage [0, 254] → [0, 254] (passthrough).
-
-  LST  (température en °C, uint8 normalisé) :
-    Encodé comme DTM : uint8 [0,254] → [MIN_TEMPERATURE, MAX_TEMPERATURE]
-    Tags : MIN_TEMPERATURE / MAX_TEMPERATURE
-
-  DSM / Imperviousness / NDBI / Albedo (uint8 normalisé) :
-    Encodé comme DTM : uint8 [0,254] → [VALUE_MIN, VALUE_MAX]
-    Tags : VALUE_MIN / VALUE_MAX
-
-  BuildingHeight (hauteur en mètres, float32 natif) :
-    Pas de COG uint8 dans l'ingestion actuelle — lu directement.
+Layer Decoder — decodes COG uint8 rasters to physical values.
 
 """
 from __future__ import annotations
@@ -38,14 +17,14 @@ logger = logging.getLogger(__name__)
 
 class LayerEncoding(Enum):
     """
-    Convention d'encodage d'un raster.
+    Convention for encoding physical values in uint8 rasters.
 
-    FLOAT32_NATIVE  : raster déjà en float32, aucun décodage nécessaire
-    SPECTRAL_INDEX  : uint8, encode un index spectral [-1, 1]
-                      formule : valeur = (pixel / 254) * 2 - 1
+    FLOAT32_NATIVE : raster already in float32, no decoding needed
+    SPECTRAL_INDEX  : uint8, encode spectral index [-1, 1]
+                      formula : value = (pixel / 254) * 2 - 1
                       nodata  : pixel == 255
-    RANGE_UINT8     : uint8, encode une valeur avec plage [min, max] stockée en metadata
-                      formule : valeur = pixel / 254 * (max - min) + min
+    RANGE_UINT8     : uint8, encode a value with range [min, max] stored in metadata
+                      formula : value = pixel / 254 * (max - min) + min
                       nodata  : pixel == 255
                       tags min/max configurables via LayerSpec.min_tag / max_tag
     """
@@ -57,7 +36,7 @@ class LayerEncoding(Enum):
 @dataclass(frozen=True)
 class LayerSpec:
     """
-    Spécification de décodage pour un type de couche.
+    Specification for decoding a layer type.
 
     For RANGE_UINT8 layers, min_tag/max_tag specify the raster metadata
     tag names that store the original value range (used for decoding).
@@ -70,11 +49,7 @@ class LayerSpec:
     max_tag: Optional[str] = None
 
 
-# ── Registre des specs par nom de couche ─────────────────────────────────────
-#
-# Clés = noms utilisés dans le dict paths de UHIPreprocessor.
-# Pour ajouter un nouveau type de couche : ajouter une entrée ici.
-# Aucun autre code ne change.
+# ── Layers Specifications ─────────────────────────────────────
 
 LAYER_SPECS: dict[str, LayerSpec] = {
     "ndvi": LayerSpec(
@@ -132,11 +107,8 @@ LAYER_SPECS: dict[str, LayerSpec] = {
 
 class LayerDecoder:
     """
-    Décode un tableau numpy uint8 vers les valeurs physiques float32
-    correspondant au type de couche demandé.
-
-    Utilisé par UHIPreprocessor après chaque lecture de fenêtre raster,
-    avant la construction de la matrice de features X.
+    Decodes a numpy uint8 array to physical float32 values
+    corresponding to the requested layer type.
     """
 
     def decode(

@@ -12,7 +12,7 @@
           </div>
           <div>
             <div class="panel-title">UHI Prediction</div>
-            <div class="panel-subtitle">Configure model parameters</div>
+            <div class="panel-subtitle">{{ predictionResult ? 'Comparison view' : 'Run simulation' }}</div>
           </div>
         </div>
         <button class="panel-close" @click="$emit('close')">
@@ -39,137 +39,14 @@
         </div>
       </div>
 
-      <!-- Divider -->
-      <div class="panel-divider">
-        <span>Model Parameters</span>
+      <!-- Objects summary -->
+      <div class="objects-summary" v-if="zoneObjects.length > 0">
+        <i class="fas fa-cubes"></i>
+        {{ zoneObjects.length }} object{{ zoneObjects.length > 1 ? 's' : '' }} placed
       </div>
 
-      <!-- Parameters -->
-      <div class="params-list">
-
-        <!-- Season -->
-        <div class="param-group">
-          <label class="param-label">
-            <i class="fas fa-calendar-alt"></i>
-            Season
-          </label>
-          <div class="param-toggle-group">
-            <button
-              v-for="s in seasons"
-              :key="s.value"
-              class="toggle-btn"
-              :class="{ active: params.season === s.value }"
-              @click="params.season = s.value"
-            >{{ s.label }}</button>
-          </div>
-        </div>
-
-        <!-- Time of day -->
-        <div class="param-group">
-          <label class="param-label">
-            <i class="fas fa-clock"></i>
-            Time of Day
-          </label>
-          <div class="param-toggle-group">
-            <button
-              v-for="t in timeOfDay"
-              :key="t.value"
-              class="toggle-btn"
-              :class="{ active: params.timeOfDay === t.value }"
-              @click="params.timeOfDay = t.value"
-            >
-              <i :class="t.icon" style="margin-right:4px; font-size:10px;"></i>
-              {{ t.label }}
-            </button>
-          </div>
-        </div>
-
-        <!-- Temperature offset -->
-        <div class="param-group">
-          <label class="param-label">
-            <i class="fas fa-thermometer-half"></i>
-            Ambient Temperature
-            <span class="param-value">{{ params.temperature }}°C</span>
-          </label>
-          <div class="slider-wrapper">
-            <input
-              type="range"
-              class="param-slider"
-              v-model.number="params.temperature"
-              min="-5" max="45" step="1"
-            />
-            <div class="slider-track-fill" :style="{ width: sliderPercent(params.temperature, -5, 45) + '%' }"></div>
-          </div>
-          <div class="slider-labels">
-            <span>-5°C</span>
-            <span>45°C</span>
-          </div>
-        </div>
-
-        <!-- Wind speed -->
-        <div class="param-group">
-          <label class="param-label">
-            <i class="fas fa-wind"></i>
-            Wind Speed
-            <span class="param-value">{{ params.windSpeed }} m/s</span>
-          </label>
-          <div class="slider-wrapper">
-            <input
-              type="range"
-              class="param-slider"
-              v-model.number="params.windSpeed"
-              min="0" max="20" step="0.5"
-            />
-            <div class="slider-track-fill" :style="{ width: sliderPercent(params.windSpeed, 0, 20) + '%' }"></div>
-          </div>
-          <div class="slider-labels">
-            <span>0 m/s</span>
-            <span>20 m/s</span>
-          </div>
-        </div>
-
-        <!-- Vegetation density -->
-        <div class="param-group">
-          <label class="param-label">
-            <i class="fas fa-leaf"></i>
-            Vegetation Scenario
-          </label>
-          <div class="param-toggle-group">
-            <button
-              v-for="v in vegetationScenarios"
-              :key="v.value"
-              class="toggle-btn"
-              :class="{ active: params.vegetation === v.value }"
-              @click="params.vegetation = v.value"
-            >{{ v.label }}</button>
-          </div>
-        </div>
-
-        <!-- Urban density -->
-        <div class="param-group">
-          <label class="param-label">
-            <i class="fas fa-city"></i>
-            Urban Density Override
-          </label>
-          <div class="param-toggle-group">
-            <button
-              v-for="u in urbanDensity"
-              :key="u.value"
-              class="toggle-btn"
-              :class="{ active: params.urbanDensity === u.value }"
-              @click="params.urbanDensity = u.value"
-            >{{ u.label }}</button>
-          </div>
-        </div>
-
-      </div>
-
-      <!-- Actions -->
-      <div class="panel-actions">
-        <button class="btn-reset" @click="resetParams">
-          <i class="fas fa-undo"></i>
-          Reset
-        </button>
+      <!-- Pre-prediction: just the button -->
+      <div v-if="!predictionResult" class="predict-section">
         <button class="btn-predict" @click="launchPrediction" :class="{ loading: isLoading }">
           <span v-if="!isLoading">
             <i class="fas fa-bolt"></i>
@@ -181,28 +58,96 @@
         </button>
       </div>
 
-      <!-- Mock result -->
+      <!-- Post-prediction: comparison UI -->
       <Transition name="result-fade">
-        <div v-if="mockResult" class="mock-result">
-          <div class="mock-result-header">
-            <i class="fas fa-check-circle"></i>
-            Prediction Complete
+        <div v-if="predictionResult" class="comparison-section">
+
+          <!-- UHI Results -->
+          <div class="panel-divider">
+            <span>Prediction Results</span>
           </div>
-          <div class="mock-result-body">
-            <div class="mock-stat">
-              <span class="mock-stat-label">Mean UHI Index</span>
-              <span class="mock-stat-value heat">0.74</span>
+
+          <div class="result-cards">
+            <div class="result-card main">
+              <span class="rc-label">Mean UHI</span>
+              <span class="rc-value heat">{{ predictionResult.stats.mean_uhi.toFixed(2) }}°C</span>
             </div>
-            <div class="mock-stat">
-              <span class="mock-stat-label">Peak Temperature</span>
-              <span class="mock-stat-value">+{{ (params.temperature + 3.2).toFixed(1) }}°C</span>
+            <div class="result-card">
+              <span class="rc-label">Min</span>
+              <span class="rc-value">{{ predictionResult.stats.min_uhi.toFixed(2) }}°C</span>
             </div>
-            <div class="mock-stat">
-              <span class="mock-stat-label">Risk Level</span>
-              <span class="mock-stat-value warn">HIGH</span>
+            <div class="result-card">
+              <span class="rc-label">Max</span>
+              <span class="rc-value">{{ predictionResult.stats.max_uhi.toFixed(2) }}°C</span>
             </div>
           </div>
-          <p class="mock-note">⚠️ This is a demonstration result. Real API not connected.</p>
+
+          <div class="result-meta">
+            <span><i class="fas fa-th"></i> {{ predictionResult.stats.pixel_count.toLocaleString() }} px</span>
+            <span v-if="predictionResult.stats.duration_ms">
+              <i class="fas fa-clock"></i> {{ (predictionResult.stats.duration_ms / 1000).toFixed(1) }}s
+            </span>
+          </div>
+
+          <!-- Before / After comparison -->
+          <div class="panel-divider" v-if="zoneStats && hasComparison">
+            <span>Before / After Comparison</span>
+          </div>
+
+          <div v-if="zoneStats && hasComparison" class="comparison-list">
+            <div
+              v-for="layer in comparisonLayers"
+              :key="layer.key"
+              class="comparison-row"
+            >
+              <div class="cmp-header">
+                <i :class="layer.icon" :style="{ color: layer.color }"></i>
+                <span class="cmp-name">{{ layer.label }}</span>
+              </div>
+              <div class="cmp-values" v-if="zoneStats.layer_stats[layer.key] && afterStats?.layer_stats[layer.key]">
+                <div class="cmp-col">
+                  <span class="cmp-label">Before</span>
+                  <span class="cmp-val">{{ formatVal(zoneStats.layer_stats[layer.key].mean, layer.unit) }}</span>
+                </div>
+                <div class="cmp-arrow">
+                  <i class="fas fa-arrow-right"></i>
+                </div>
+                <div class="cmp-col">
+                  <span class="cmp-label">After</span>
+                  <span class="cmp-val">{{ formatVal(afterStats.layer_stats[layer.key].mean, layer.unit) }}</span>
+                </div>
+                <div class="cmp-col delta" v-if="getDelta(layer.key) !== null">
+                  <span class="cmp-label">Delta</span>
+                  <span class="cmp-val" :class="getDeltaClass(layer.key)">
+                    {{ getDeltaFormatted(layer.key, layer.unit) }}
+                  </span>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Actions after prediction -->
+          <div class="post-actions">
+            <button class="btn-rerun" @click="rerunPrediction">
+              <i class="fas fa-redo"></i>
+              Re-run
+            </button>
+          </div>
+
+        </div>
+      </Transition>
+
+      <!-- Error -->
+      <Transition name="result-fade">
+        <div v-if="predictionError" class="error-result">
+          <div class="error-header">
+            <i class="fas fa-exclamation-triangle"></i>
+            Prediction Failed
+          </div>
+          <p class="error-msg">{{ predictionError }}</p>
+          <button class="btn-rerun" @click="launchPrediction">
+            <i class="fas fa-redo"></i> Retry
+          </button>
         </div>
       </Transition>
 
@@ -211,71 +156,132 @@
 </template>
 
 <script setup>
-import { ref, reactive } from 'vue'
+import { ref, computed } from 'vue'
 
 const props = defineProps({
   visible: { type: Boolean, default: false },
-  geometry: { type: Object, default: null }
+  geometry: { type: Object, default: null },
+  zoneObjects: { type: Array, default: () => [] },
+  zoneStats: { type: Object, default: null },
 })
 
 const emit = defineEmits(['close', 'predict'])
 
-const seasons = [
-  { value: 'spring', label: 'Spring' },
-  { value: 'summer', label: 'Summer' },
-  { value: 'autumn', label: 'Autumn' },
-  { value: 'winter', label: 'Winter' },
+const PREDICTION_URL = '/prediction'
+
+const isLoading = ref(false)
+const predictionResult = ref(null)
+const predictionError = ref(null)
+const afterStats = ref(null)
+
+const comparisonLayers = [
+  { key: 'ndvi',              label: 'NDVI',             icon: 'fas fa-leaf',             color: '#4ade80', unit: '' },
+  { key: 'ndwi',              label: 'NDWI',             icon: 'fas fa-droplet',          color: '#38bdf8', unit: '' },
+  { key: 'ndbi',              label: 'NDBI',             icon: 'fas fa-city',             color: '#94a3b8', unit: '' },
+  { key: 'imperviousness',    label: 'Imperviousness',   icon: 'fas fa-road',             color: '#6b7280', unit: '' },
+  { key: 'albedo',            label: 'Albedo',           icon: 'fas fa-sun',              color: '#fbbf24', unit: '' },
+  { key: 'dsm',               label: 'DSM',              icon: 'fas fa-mountain-sun',     color: '#c084fc', unit: 'm' },
+  { key: 'building_height',   label: 'Building Height',  icon: 'fas fa-building',         color: '#f59e0b', unit: 'm' },
 ]
 
-const timeOfDay = [
-  { value: 'dawn', label: 'Dawn', icon: 'fas fa-cloud-sun' },
-  { value: 'day', label: 'Day', icon: 'fas fa-sun' },
-  { value: 'dusk', label: 'Dusk', icon: 'fas fa-cloud-moon' },
-  { value: 'night', label: 'Night', icon: 'fas fa-moon' },
-]
+const hasComparison = computed(() => {
+  return props.zoneObjects.length > 0 && afterStats.value
+})
 
-const vegetationScenarios = [
-  { value: 'current', label: 'Current' },
-  { value: 'low', label: 'Low' },
-  { value: 'high', label: 'High' },
-]
-
-const urbanDensity = [
-  { value: 'current', label: 'Current' },
-  { value: 'dense', label: 'Dense' },
-  { value: 'sparse', label: 'Sparse' },
-]
-
-const defaultParams = {
-  season: 'summer',
-  timeOfDay: 'day',
-  temperature: 25,
-  windSpeed: 3,
-  vegetation: 'current',
-  urbanDensity: 'current',
+function formatVal(val, unit) {
+  if (val === null || val === undefined) return '—'
+  const f = Math.abs(val) >= 100 ? val.toFixed(1) : val.toFixed(3)
+  return unit ? `${f} ${unit}` : f
 }
 
-const params = reactive({ ...defaultParams })
-const isLoading = ref(false)
-const mockResult = ref(false)
+function getDelta(key) {
+  const before = props.zoneStats?.layer_stats?.[key]?.mean
+  const after = afterStats.value?.layer_stats?.[key]?.mean
+  if (before == null || after == null) return null
+  return after - before
+}
 
-function resetParams() {
-  Object.assign(params, defaultParams)
-  mockResult.value = false
+function getDeltaFormatted(key, unit) {
+  const d = getDelta(key)
+  if (d === null) return '—'
+  const sign = d >= 0 ? '+' : ''
+  const f = Math.abs(d) >= 100 ? d.toFixed(1) : d.toFixed(3)
+  return unit ? `${sign}${f} ${unit}` : `${sign}${f}`
+}
+
+function getDeltaClass(key) {
+  const d = getDelta(key)
+  if (d === null) return ''
+  // For vegetation-related: positive is good, for imperviousness: positive is bad
+  const greenPositive = ['ndvi', 'ndwi', 'albedo']
+  if (greenPositive.includes(key)) {
+    return d > 0 ? 'positive' : d < 0 ? 'negative' : ''
+  }
+  return d > 0 ? 'negative' : d < 0 ? 'positive' : ''
+}
+
+async function fetchAfterStats() {
+  if (!props.geometry?.geoJSON || props.zoneObjects.length === 0) {
+    afterStats.value = null
+    return
+  }
+  // We don't have a "with objects" stats route, so we skip after-stats
+  // if no objects were placed. The comparison only makes sense with objects.
+  // For now, we re-use the zone stats route (which doesn't apply object impacts).
+  // The delta will be visible in the prediction result itself.
+  afterStats.value = null
 }
 
 async function launchPrediction() {
+  if (!props.geometry?.geoJSON) return
+
   isLoading.value = true
-  mockResult.value = false
-  // Simulate API call
-  await new Promise(r => setTimeout(r, 1800))
-  isLoading.value = false
-  mockResult.value = true
-  emit('predict', { geometry: props.geometry, params: { ...params } })
+  predictionResult.value = null
+  predictionError.value = null
+  afterStats.value = null
+
+  try {
+    const body = {
+      geometry: props.geometry.geoJSON,
+      objects: (props.zoneObjects || []).map(o => ({
+        type: o.type,
+        lon: o.lon,
+        lat: o.lat,
+      })),
+    }
+
+    const resp = await fetch(`${PREDICTION_URL}/predict/zone`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    })
+
+    if (!resp.ok) {
+      const text = await resp.text()
+      throw new Error(`${resp.status}: ${text}`)
+    }
+
+    const data = await resp.json()
+    predictionResult.value = data
+
+    emit('predict', {
+      geometry: props.geometry,
+      result: data,
+    })
+
+  } catch (err) {
+    console.error('Zone prediction failed:', err)
+    predictionError.value = err.message || 'Unknown error'
+  } finally {
+    isLoading.value = false
+  }
 }
 
-function sliderPercent(val, min, max) {
-  return ((val - min) / (max - min)) * 100
+function rerunPrediction() {
+  predictionResult.value = null
+  predictionError.value = null
+  afterStats.value = null
+  launchPrediction()
 }
 </script>
 
@@ -284,7 +290,7 @@ function sliderPercent(val, min, max) {
   position: absolute;
   top: 70px;
   right: 16px;
-  width: 320px;
+  width: 340px;
   max-height: calc(100vh - 90px);
   overflow-y: auto;
   background: rgba(10, 14, 22, 0.97);
@@ -298,14 +304,13 @@ function sliderPercent(val, min, max) {
   scrollbar-color: rgba(34,211,160,0.3) transparent;
 }
 
-/* Slide in from right */
 .panel-slide-enter-active,
 .panel-slide-leave-active {
   transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1), opacity 0.3s ease;
 }
 .panel-slide-enter-from,
 .panel-slide-leave-to {
-  transform: translateX(340px);
+  transform: translateX(360px);
   opacity: 0;
 }
 
@@ -370,7 +375,7 @@ function sliderPercent(val, min, max) {
 }
 
 .zone-summary {
-  margin: 12px 16px;
+  margin: 12px 16px 0;
   padding: 10px 12px;
   background: rgba(34, 211, 160, 0.05);
   border: 1px solid rgba(34, 211, 160, 0.15);
@@ -404,182 +409,32 @@ function sliderPercent(val, min, max) {
   font-family: 'Courier New', monospace;
 }
 
-.panel-divider {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: 0 16px;
-  margin: 4px 0 8px;
-}
-
-.panel-divider span {
-  font-size: 10px;
-  text-transform: uppercase;
-  letter-spacing: 0.12em;
-  color: rgba(255,255,255,0.3);
-  white-space: nowrap;
-}
-
-.panel-divider::before,
-.panel-divider::after {
-  content: '';
-  flex: 1;
-  height: 1px;
-  background: rgba(255,255,255,0.07);
-}
-
-.params-list {
-  padding: 0 16px;
-  display: flex;
-  flex-direction: column;
-  gap: 16px;
-}
-
-.param-group {
-  display: flex;
-  flex-direction: column;
-  gap: 7px;
-}
-
-.param-label {
-  display: flex;
-  align-items: center;
-  gap: 7px;
-  font-size: 11px;
-  font-weight: 600;
-  color: rgba(255,255,255,0.6);
-  text-transform: uppercase;
-  letter-spacing: 0.08em;
-}
-
-.param-label i {
-  color: rgba(34, 211, 160, 0.7);
-  font-size: 11px;
-  width: 14px;
-  text-align: center;
-}
-
-.param-value {
-  margin-left: auto;
-  font-size: 12px;
-  color: #22d3a0;
-  font-weight: 700;
-}
-
-.param-toggle-group {
-  display: flex;
-  gap: 4px;
-  flex-wrap: wrap;
-}
-
-.toggle-btn {
-  flex: 1;
-  min-width: 0;
-  padding: 6px 4px;
-  background: rgba(255,255,255,0.05);
-  border: 1px solid rgba(255,255,255,0.08);
+.objects-summary {
+  margin: 8px 16px 0;
+  padding: 6px 10px;
+  background: rgba(168, 139, 250, 0.08);
+  border: 1px solid rgba(168, 139, 250, 0.2);
   border-radius: 6px;
-  color: rgba(255,255,255,0.5);
-  font-size: 10px;
-  font-family: 'Courier New', monospace;
-  font-weight: 600;
-  cursor: pointer;
-  transition: all 0.15s;
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
-  white-space: nowrap;
-}
-
-.toggle-btn:hover {
-  background: rgba(34, 211, 160, 0.08);
-  border-color: rgba(34, 211, 160, 0.3);
-  color: rgba(255,255,255,0.8);
-}
-
-.toggle-btn.active {
-  background: rgba(34, 211, 160, 0.15);
-  border-color: rgba(34, 211, 160, 0.5);
-  color: #22d3a0;
-}
-
-/* Slider */
-.slider-wrapper {
-  position: relative;
-  height: 20px;
-  display: flex;
-  align-items: center;
-}
-
-.param-slider {
-  width: 100%;
-  height: 3px;
-  -webkit-appearance: none;
-  appearance: none;
-  background: rgba(255,255,255,0.1);
-  border-radius: 2px;
-  outline: none;
-  cursor: pointer;
-  position: relative;
-  z-index: 1;
-}
-
-.param-slider::-webkit-slider-thumb {
-  -webkit-appearance: none;
-  width: 14px;
-  height: 14px;
-  border-radius: 50%;
-  background: #22d3a0;
-  cursor: pointer;
-  box-shadow: 0 0 8px rgba(34, 211, 160, 0.6);
-  border: 2px solid rgba(0,0,0,0.4);
-}
-
-.slider-labels {
-  display: flex;
-  justify-content: space-between;
-  font-size: 9px;
-  color: rgba(255,255,255,0.25);
-  margin-top: -2px;
-}
-
-/* Actions */
-.panel-actions {
-  display: flex;
-  gap: 8px;
-  padding: 16px 16px 12px;
-  margin-top: 8px;
-  border-top: 1px solid rgba(255,255,255,0.06);
-}
-
-.btn-reset {
-  flex: 0 0 auto;
-  padding: 10px 14px;
-  background: rgba(255,255,255,0.05);
-  border: 1px solid rgba(255,255,255,0.1);
-  border-radius: 8px;
-  color: rgba(255,255,255,0.5);
   font-size: 11px;
-  font-family: 'Courier New', monospace;
-  cursor: pointer;
-  transition: all 0.15s;
+  color: rgba(168, 139, 250, 0.8);
   display: flex;
   align-items: center;
   gap: 6px;
 }
 
-.btn-reset:hover {
-  background: rgba(255,255,255,0.09);
-  color: rgba(255,255,255,0.8);
+/* Predict button section */
+.predict-section {
+  padding: 16px;
 }
 
 .btn-predict {
-  flex: 1;
-  padding: 10px 14px;
+  width: 100%;
+  padding: 12px 14px;
   background: linear-gradient(135deg, rgba(34, 211, 160, 0.25), rgba(34, 211, 160, 0.15));
   border: 1px solid rgba(34, 211, 160, 0.5);
   border-radius: 8px;
   color: #22d3a0;
-  font-size: 12px;
+  font-size: 13px;
   font-family: 'Courier New', monospace;
   font-weight: 700;
   cursor: pointer;
@@ -589,7 +444,7 @@ function sliderPercent(val, min, max) {
   display: flex;
   align-items: center;
   justify-content: center;
-  gap: 7px;
+  gap: 8px;
 }
 
 .btn-predict:hover:not(.loading) {
@@ -620,60 +475,229 @@ function sliderPercent(val, min, max) {
   50% { transform: translateY(-4px); opacity: 1; }
 }
 
-/* Mock result */
-.mock-result {
-  margin: 0 16px 16px;
-  padding: 12px;
-  background: rgba(34, 211, 160, 0.05);
-  border: 1px solid rgba(34, 211, 160, 0.2);
-  border-radius: 8px;
+/* Comparison section */
+.comparison-section {
+  padding-bottom: 12px;
 }
 
-.result-fade-enter-active { transition: all 0.4s ease; }
-.result-fade-enter-from { opacity: 0; transform: translateY(8px); }
-
-.mock-result-header {
-  font-size: 11px;
-  font-weight: 700;
-  color: #22d3a0;
-  text-transform: uppercase;
-  letter-spacing: 0.1em;
-  margin-bottom: 10px;
+.panel-divider {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 10px;
+  padding: 0 16px;
+  margin: 12px 0 8px;
 }
 
-.mock-result-body {
+.panel-divider span {
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  color: rgba(255,255,255,0.3);
+  white-space: nowrap;
+}
+
+.panel-divider::before,
+.panel-divider::after {
+  content: '';
+  flex: 1;
+  height: 1px;
+  background: rgba(255,255,255,0.07);
+}
+
+.result-cards {
+  display: flex;
+  gap: 6px;
+  padding: 0 16px;
+}
+
+.result-card {
+  flex: 1;
+  padding: 10px 8px;
+  background: rgba(255,255,255,0.03);
+  border: 1px solid rgba(255,255,255,0.06);
+  border-radius: 8px;
+  text-align: center;
+}
+
+.result-card.main {
+  background: rgba(248, 113, 113, 0.06);
+  border-color: rgba(248, 113, 113, 0.2);
+}
+
+.rc-label {
+  display: block;
+  font-size: 8px;
+  color: rgba(255,255,255,0.4);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  margin-bottom: 4px;
+}
+
+.rc-value {
+  font-size: 14px;
+  font-weight: 700;
+  color: white;
+}
+
+.rc-value.heat {
+  color: #f87171;
+  font-size: 16px;
+}
+
+.result-meta {
+  display: flex;
+  gap: 14px;
+  padding: 8px 16px 0;
+  font-size: 10px;
+  color: rgba(255,255,255,0.35);
+}
+
+.result-meta span {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+/* Comparison list */
+.comparison-list {
+  padding: 0 16px;
   display: flex;
   flex-direction: column;
   gap: 6px;
 }
 
-.mock-stat {
+.comparison-row {
+  padding: 8px 10px;
+  background: rgba(255,255,255,0.03);
+  border: 1px solid rgba(255,255,255,0.06);
+  border-radius: 8px;
+}
+
+.cmp-header {
   display: flex;
-  justify-content: space-between;
   align-items: center;
-  font-size: 11px;
+  gap: 6px;
+  margin-bottom: 6px;
 }
 
-.mock-stat-label {
-  color: rgba(255,255,255,0.5);
+.cmp-header i {
+  font-size: 10px;
+  width: 12px;
+  text-align: center;
 }
 
-.mock-stat-value {
+.cmp-name {
+  font-size: 10px;
   font-weight: 700;
-  color: white;
+  color: rgba(255,255,255,0.6);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
 }
 
-.mock-stat-value.heat { color: #f87171; }
-.mock-stat-value.warn { color: #fbbf24; }
+.cmp-values {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
 
-.mock-note {
-  margin-top: 8px;
-  font-size: 9px;
-  color: rgba(255,255,255,0.25);
-  line-height: 1.4;
+.cmp-col {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 0;
+}
+
+.cmp-col.delta {
+  margin-left: auto;
+}
+
+.cmp-label {
+  font-size: 8px;
+  color: rgba(255,255,255,0.3);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+.cmp-val {
+  font-size: 11px;
+  font-weight: 700;
+  color: rgba(255,255,255,0.7);
+}
+
+.cmp-val.positive {
+  color: #4ade80;
+}
+
+.cmp-val.negative {
+  color: #f87171;
+}
+
+.cmp-arrow {
+  color: rgba(255,255,255,0.2);
+  font-size: 10px;
+  padding: 0 2px;
+}
+
+/* Post-actions */
+.post-actions {
+  padding: 12px 16px 0;
+  display: flex;
+  gap: 8px;
+}
+
+.btn-rerun {
+  flex: 1;
+  padding: 8px 14px;
+  background: rgba(255,255,255,0.05);
+  border: 1px solid rgba(255,255,255,0.1);
+  border-radius: 8px;
+  color: rgba(255,255,255,0.6);
+  font-size: 11px;
   font-family: 'Courier New', monospace;
+  cursor: pointer;
+  transition: all 0.15s;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
 }
+
+.btn-rerun:hover {
+  background: rgba(34, 211, 160, 0.1);
+  border-color: rgba(34, 211, 160, 0.3);
+  color: #22d3a0;
+}
+
+/* Error */
+.error-result {
+  margin: 12px 16px 16px;
+  padding: 12px;
+  background: rgba(248, 113, 113, 0.05);
+  border: 1px solid rgba(248, 113, 113, 0.2);
+  border-radius: 8px;
+  text-align: center;
+}
+
+.error-header {
+  font-size: 11px;
+  font-weight: 700;
+  color: #f87171;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  margin-bottom: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+}
+
+.error-msg {
+  margin: 0 0 10px;
+  font-size: 10px;
+  color: rgba(248, 113, 113, 0.6);
+  line-height: 1.4;
+}
+
+.result-fade-enter-active { transition: all 0.4s ease; }
+.result-fade-enter-from { opacity: 0; transform: translateY(8px); }
 </style>

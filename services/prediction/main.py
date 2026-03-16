@@ -19,10 +19,12 @@ from fastapi import FastAPI
 from algorithm.api.prediction_routeur import router as prediction_router
 from algorithm.api.training_router import router as training_router
 from algorithm.api.vlinder_router import router as vlinder_router
+from algorithm.api.zone_router import router as zone_router
 from algorithm.application.prediction_orchestrator import PredictionOrchestrator
 from algorithm.application.training_orchestrator import TrainingOrchestrator
 from algorithm.config import settings
 from algorithm.domain.uhi_raster_engine import UHIRasterEngine
+from services.prediction.algorithm.application.zone_predictor import ZonePredictor
 from algorithm.infrastructure.layer_resolver import LayerResolver
 from algorithm.infrastructure.orion_client import OrionClient
 from algorithm.infrastructure.orion_publisher import OrionPublisher
@@ -33,30 +35,40 @@ from algorithm.training_service import TrainingState
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-# ── Build the dependency graph (all singletons) ───────────────────────────────
-#
-# Reading order = dependency order.
-# Each line depends only on what is declared above it.
+# ── Singletons ───────────────────────────────
 
+# Client for Orion-LD HTTP client for the prediction service.
 orion_client = OrionClient(settings)
+
+# Layer Resolver — resolves NGSI-LD entity IDs to local file paths.
 layer_resolver = LayerResolver(orion_client)
+
+# Orion publisher for sending predictions to Orion-LD.
 orion_publisher = OrionPublisher(orion_client)
+
+# UHI raster engine for reading and processing rasters files.
 raster_engine = UHIRasterEngine()
+
+# Vlinder client for fetching weather data from the VLINDER API
 vlinder_client = VlinderClient(
     station_id=settings.vlinder_station_id,
     default_temp=settings.vlinder_default_temp,
     cache_ttl_seconds=settings.vlinder_cache_ttl,
 )
 
+# Training state for keepiing track of the training process.
 training_state = TrainingState()
+# Prediction state for keeping track of the prediction process.
 xgb_prediction_state = _PredictionState()
 
+# Training orchestrator for training the XGBoost model.
 training_orchestrator = TrainingOrchestrator(
     settings=settings,
     publisher=orion_publisher,
     training_state=training_state,
 )
 
+# Prediction orchestrator for running the XGBoost model.
 prediction_orchestrator = PredictionOrchestrator(
     settings=settings,
     layer_resolver=layer_resolver,
@@ -65,9 +77,15 @@ prediction_orchestrator = PredictionOrchestrator(
     xgb_prediction_state=xgb_prediction_state,
 )
 
+# Zone predictor for running the XGBoost model on user-drawn zones.
+zone_predictor = ZonePredictor(
+    model_path=settings.model_path,
+    layer_resolver=layer_resolver,
+    settings=settings,
+)
+
 
 # ── Lifespan ──────────────────────────────────────────────────────────────────
-
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """
@@ -116,7 +134,6 @@ async def lifespan(app: FastAPI):
 
 
 # ── FastAPI app ───────────────────────────────────────────────────────────────
-
 app = FastAPI(
     title="UHI Prediction Service",
     description="Urban Heat Island prediction. Input paths resolved from Orion-LD at runtime.",
@@ -124,9 +141,11 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
+# Prediction, training and VLINDER API routes.
 app.include_router(prediction_router)
 app.include_router(training_router)
 app.include_router(vlinder_router)
+app.include_router(zone_router)
 
 
 @app.get("/health")
@@ -137,5 +156,3 @@ async def health_check():
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run(app, host="0.0.0.0", port=8000)
-
-## 5. Explication Pédagogique
