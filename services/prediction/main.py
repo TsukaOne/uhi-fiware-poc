@@ -24,7 +24,7 @@ from algorithm.application.prediction_orchestrator import PredictionOrchestrator
 from algorithm.application.training_orchestrator import TrainingOrchestrator
 from algorithm.config import settings
 from algorithm.domain.uhi_raster_engine import UHIRasterEngine
-from services.prediction.algorithm.application.zone_predictor import ZonePredictor
+from algorithm.application.zone_predictor import ZonePredictor
 from algorithm.infrastructure.layer_resolver import LayerResolver
 from algorithm.infrastructure.orion_client import OrionClient
 from algorithm.infrastructure.orion_publisher import OrionPublisher

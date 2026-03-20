@@ -26,11 +26,12 @@
 
   const emit = defineEmits(['geometry-drawn', 'drawing-active', 'pixel-click'])
 
-  const { cesiumContainer, getViewer, flyTo } = useCesiumViewer(props, emit)
+  const { cesiumContainer, getViewer, flyTo, undoLastPoint } = useCesiumViewer(props, emit)
 
   defineExpose({
     getViewer,
-    flyTo
+    flyTo,
+    undoLastPoint
   })
 </script>
 

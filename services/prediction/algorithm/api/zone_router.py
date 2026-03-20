@@ -17,7 +17,7 @@ from pydantic import BaseModel, Field
 from rasterio.warp import transform_bounds
 from rasterio.windows import from_bounds
 
-from services.prediction.algorithm.application.zone_predictor import ZonePredictor
+from algorithm.application.zone_predictor import ZonePredictor
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -204,6 +204,112 @@ async def pixel_value(
         lat=result.lat,
         values=result.values,
     )
+
+
+# ── Single-layer global stats ────────────────────────────────────────────────
+
+
+class SingleLayerStatsRequest(BaseModel):
+    layer: str = Field(..., description="Layer name (e.g. 'ndvi', 'lst', 'uhi')")
+    geometry: Optional[dict] = Field(
+        None,
+        description="Optional GeoJSON Polygon to clip. If null, computes over full raster.",
+    )
+
+
+class SingleLayerStatsResponse(BaseModel):
+    status: str
+    layer: str
+    mean: float
+    min: float
+    max: float
+    std: float
+    pixel_count: int
+
+
+@router.post("/predict/layer/stats", response_model=SingleLayerStatsResponse)
+async def layer_stats(request: SingleLayerStatsRequest):
+    """
+    Return decoded statistics (mean/min/max/std) for a single layer.
+    Decodes uint8 COG encoding to real physical float32 values using LayerDecoder.
+    Optionally clips to a GeoJSON geometry (Polygon).
+    """
+    from algorithm.infrastructure.layer_resolver import LayerResolver
+    from algorithm.config import Settings
+    from algorithm.domain.layer_decoder import LayerDecoder, LAYER_SPECS
+
+    layer = request.layer
+    resolver: LayerResolver = _get_layer_resolver()
+    settings: Settings = _get_settings()
+
+    # Resolve file path
+    if layer == "uhi":
+        file_path = Path(settings.output_path) / "uhi_xgb_heatmap_brussels_2024.tif"
+        if not file_path.exists():
+            raise HTTPException(404, "UHI prediction output not found.")
+    else:
+        entity_ids = settings.all_layer_entity_ids
+        if layer not in entity_ids:
+            raise HTTPException(
+                422,
+                f"Unknown layer '{layer}'. Available: {list(entity_ids.keys()) + ['uhi']}",
+            )
+        try:
+            paths = await resolver.resolve_required({layer: entity_ids[layer]})
+            file_path = paths[layer]
+        except Exception as e:
+            raise HTTPException(503, f"Cannot resolve layer: {e}")
+
+    # Read raster (optionally clipped) and decode to physical values
+    try:
+        with rasterio.open(file_path) as ds:
+            # If geometry provided, clip to bounding box window
+            if request.geometry is not None:
+                geom = request.geometry
+                if geom.get("type") != "Polygon" or not geom.get("coordinates"):
+                    raise HTTPException(422, "geometry must be a GeoJSON Polygon")
+                coords = geom["coordinates"][0]
+                lons = [c[0] for c in coords]
+                lats = [c[1] for c in coords]
+                # Transform WGS84 bounds to raster CRS
+                raster_bounds = transform_bounds("EPSG:4326", ds.crs, min(lons), min(lats), max(lons), max(lats))
+                window = from_bounds(*raster_bounds, transform=ds.transform)
+                raw = ds.read(1, window=window)
+            else:
+                raw = ds.read(1)
+
+            # Decode uint8 → float32 using LayerDecoder
+            decoder = LayerDecoder()
+            if layer in LAYER_SPECS:
+                decoded, nodata_mask = decoder.decode(raw, layer, raster_path=str(file_path))
+                valid = decoded[~nodata_mask & np.isfinite(decoded)]
+            else:
+                # UHI or unknown: already float-like, apply standard nodata filtering
+                data = raw.astype(np.float64)
+                nodata = ds.nodata
+                if nodata is not None:
+                    valid = data[data != nodata]
+                else:
+                    valid = data[np.isfinite(data)]
+                valid = valid[np.isfinite(valid)]
+
+            if len(valid) == 0:
+                raise HTTPException(404, f"Layer '{layer}' has no valid pixels in the selected area.")
+
+            return SingleLayerStatsResponse(
+                status="success",
+                layer=layer,
+                mean=round(float(np.mean(valid)), 4),
+                min=round(float(np.min(valid)), 4),
+                max=round(float(np.max(valid)), 4),
+                std=round(float(np.std(valid)), 4),
+                pixel_count=int(len(valid)),
+            )
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.exception("Layer stats computation failed")
+        raise HTTPException(500, f"Layer stats failed: {e}")
 
 
 # ── Map download ─────────────────────────────────────────────────────────────

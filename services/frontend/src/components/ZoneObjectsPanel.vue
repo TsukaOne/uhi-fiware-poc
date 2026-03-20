@@ -1,158 +1,200 @@
 <template>
-  <Transition name="panel-slide">
-    <div v-if="visible" class="zone-objects-panel">
-      <div class="zop-header">
-        <span class="zop-title">
-          <i class="fas fa-cubes"></i> Zone Objects
-        </span>
-        <button class="zop-close" @click="$emit('close')">
-          <i class="fas fa-times"></i>
-        </button>
+  <!-- Main panel (hidden, not destroyed) -->
+  <div v-if="visible" class="zone-objects-panel" :style="panelStyle" v-show="!isHidden">
+
+    <!-- Toolbar: drag handle + title + hide arrow -->
+    <div class="zop-toolbar">
+      <div class="zop-drag" @mousedown.stop.prevent="startDragPanel" title="Drag to move">
+        <i class="fas fa-ellipsis-vertical"></i>
+      </div>
+      <span class="zop-toolbar-title">
+        <i class="fas fa-cubes"></i> Zone Objects
+      </span>
+      <button class="zop-hide-btn" @click="isHidden = true" title="Hide panel">
+        <i class="fas fa-chevron-left"></i>
+      </button>
+    </div>
+
+    <div class="zop-body">
+
+      <!-- Visual drag-and-drop schema -->
+      <div class="zop-schema">
+        <div class="schema-steps">
+          <div class="schema-step">
+            <div class="schema-icon"><i class="fas fa-hand-pointer"></i></div>
+            <span>Grab</span>
+          </div>
+          <div class="schema-arrow"><i class="fas fa-arrow-right"></i></div>
+          <div class="schema-step">
+            <div class="schema-icon"><i class="fas fa-arrows-alt"></i></div>
+            <span>Drag</span>
+          </div>
+          <div class="schema-arrow"><i class="fas fa-arrow-right"></i></div>
+          <div class="schema-step">
+            <div class="schema-icon"><i class="fas fa-map-marker-alt"></i></div>
+            <span>Drop on map</span>
+          </div>
+        </div>
+        <p class="schema-hint">Drag objects from catalog onto the 3D map inside your zone.</p>
       </div>
 
-      <div class="zop-body">
-        <p class="zop-hint">
-          Drag objects onto the 3D map to place them inside the selected zone.
-        </p>
-
-        <div class="zop-category">
-          <div class="zop-category-title">
+      <!-- CATEGORY: Vegetation (collapsible) -->
+      <div class="zop-category">
+        <button class="zop-cat-toggle" @click="catOpen.vegetation = !catOpen.vegetation">
+          <div class="zop-cat-title-inner">
             <i class="fas fa-tree"></i> Vegetation
           </div>
-          <div class="zop-items">
-            <div
-              class="zop-item"
-              draggable="true"
-              @dragstart="onDragStart($event, 'tree_deciduous')"
-            >
-              <div class="zop-item-icon"><i class="fas fa-tree"></i></div>
-              <span>Deciduous Tree</span>
-            </div>
-            <div
-              class="zop-item"
-              draggable="true"
-              @dragstart="onDragStart($event, 'tree_conifer')"
-            >
-              <div class="zop-item-icon"><i class="fas fa-tree"></i></div>
-              <span>Conifer Tree</span>
-            </div>
-            <div
-              class="zop-item"
-              draggable="true"
-              @dragstart="onDragStart($event, 'shrub')"
-            >
-              <div class="zop-item-icon"><i class="fas fa-seedling"></i></div>
-              <span>Shrub / Hedge</span>
-            </div>
-            <div
-              class="zop-item"
-              draggable="true"
-              @dragstart="onDragStart($event, 'grass')"
-            >
-              <div class="zop-item-icon"><i class="fas fa-leaf"></i></div>
-              <span>Grass Patch</span>
-            </div>
+          <i :class="catOpen.vegetation ? 'fas fa-chevron-up' : 'fas fa-chevron-down'" class="zop-cat-chevron"></i>
+        </button>
+        <div v-if="catOpen.vegetation" class="zop-items">
+          <div
+            class="zop-item"
+            draggable="true"
+            @dragstart="onDragStart($event, 'tree_deciduous')"
+          >
+            <div class="zop-item-icon"><i class="fas fa-tree"></i></div>
+            <span>Deciduous Tree</span>
+          </div>
+          <div
+            class="zop-item"
+            draggable="true"
+            @dragstart="onDragStart($event, 'tree_conifer')"
+          >
+            <div class="zop-item-icon"><i class="fas fa-tree"></i></div>
+            <span>Conifer Tree</span>
+          </div>
+          <div
+            class="zop-item"
+            draggable="true"
+            @dragstart="onDragStart($event, 'shrub')"
+          >
+            <div class="zop-item-icon"><i class="fas fa-seedling"></i></div>
+            <span>Shrub / Hedge</span>
+          </div>
+          <div
+            class="zop-item"
+            draggable="true"
+            @dragstart="onDragStart($event, 'grass')"
+          >
+            <div class="zop-item-icon"><i class="fas fa-leaf"></i></div>
+            <span>Grass Patch</span>
           </div>
         </div>
+      </div>
 
-        <div class="zop-category">
-          <div class="zop-category-title">
+      <!-- CATEGORY: Buildings (collapsible) -->
+      <div class="zop-category">
+        <button class="zop-cat-toggle" @click="catOpen.buildings = !catOpen.buildings">
+          <div class="zop-cat-title-inner">
             <i class="fas fa-building"></i> Buildings
           </div>
-          <div class="zop-items">
-            <div
-              class="zop-item"
-              draggable="true"
-              @dragstart="onDragStart($event, 'building_residential')"
-            >
-              <div class="zop-item-icon"><i class="fas fa-house"></i></div>
-              <span>Residential</span>
-            </div>
-            <div
-              class="zop-item"
-              draggable="true"
-              @dragstart="onDragStart($event, 'building_commercial')"
-            >
-              <div class="zop-item-icon"><i class="fas fa-building"></i></div>
-              <span>Commercial</span>
-            </div>
-            <div
-              class="zop-item"
-              draggable="true"
-              @dragstart="onDragStart($event, 'building_industrial')"
-            >
-              <div class="zop-item-icon"><i class="fas fa-industry"></i></div>
-              <span>Industrial</span>
-            </div>
+          <i :class="catOpen.buildings ? 'fas fa-chevron-up' : 'fas fa-chevron-down'" class="zop-cat-chevron"></i>
+        </button>
+        <div v-if="catOpen.buildings" class="zop-items">
+          <div
+            class="zop-item"
+            draggable="true"
+            @dragstart="onDragStart($event, 'building_residential')"
+          >
+            <div class="zop-item-icon"><i class="fas fa-house"></i></div>
+            <span>Residential</span>
+          </div>
+          <div
+            class="zop-item"
+            draggable="true"
+            @dragstart="onDragStart($event, 'building_commercial')"
+          >
+            <div class="zop-item-icon"><i class="fas fa-building"></i></div>
+            <span>Commercial</span>
+          </div>
+          <div
+            class="zop-item"
+            draggable="true"
+            @dragstart="onDragStart($event, 'building_industrial')"
+          >
+            <div class="zop-item-icon"><i class="fas fa-industry"></i></div>
+            <span>Industrial</span>
           </div>
         </div>
+      </div>
 
-        <div class="zop-category">
-          <div class="zop-category-title">
+      <!-- CATEGORY: Urban Furniture (collapsible) -->
+      <div class="zop-category">
+        <button class="zop-cat-toggle" @click="catOpen.furniture = !catOpen.furniture">
+          <div class="zop-cat-title-inner">
             <i class="fas fa-road"></i> Urban Furniture
           </div>
-          <div class="zop-items">
-            <div
-              class="zop-item"
-              draggable="true"
-              @dragstart="onDragStart($event, 'water_fountain')"
-            >
-              <div class="zop-item-icon"><i class="fas fa-droplet"></i></div>
-              <span>Water Fountain</span>
-            </div>
-            <div
-              class="zop-item"
-              draggable="true"
-              @dragstart="onDragStart($event, 'park_bench')"
-            >
-              <div class="zop-item-icon"><i class="fas fa-chair"></i></div>
-              <span>Park Bench</span>
-            </div>
-            <div
-              class="zop-item"
-              draggable="true"
-              @dragstart="onDragStart($event, 'solar_panel')"
-            >
-              <div class="zop-item-icon"><i class="fas fa-solar-panel"></i></div>
-              <span>Solar Panel</span>
-            </div>
+          <i :class="catOpen.furniture ? 'fas fa-chevron-up' : 'fas fa-chevron-down'" class="zop-cat-chevron"></i>
+        </button>
+        <div v-if="catOpen.furniture" class="zop-items">
+          <div
+            class="zop-item"
+            draggable="true"
+            @dragstart="onDragStart($event, 'water_fountain')"
+          >
+            <div class="zop-item-icon"><i class="fas fa-droplet"></i></div>
+            <span>Water Fountain</span>
+          </div>
+          <div
+            class="zop-item"
+            draggable="true"
+            @dragstart="onDragStart($event, 'park_bench')"
+          >
+            <div class="zop-item-icon"><i class="fas fa-chair"></i></div>
+            <span>Park Bench</span>
+          </div>
+          <div
+            class="zop-item"
+            draggable="true"
+            @dragstart="onDragStart($event, 'solar_panel')"
+          >
+            <div class="zop-item-icon"><i class="fas fa-solar-panel"></i></div>
+            <span>Solar Panel</span>
           </div>
         </div>
+      </div>
 
-        <!-- Placed objects list -->
-        <div v-if="placedObjects.length > 0" class="zop-placed">
-          <div class="zop-category-title">
+      <!-- Placed objects (collapsible dropdown) -->
+      <div v-if="placedObjects.length > 0" class="zop-placed">
+        <button class="zop-cat-toggle placed" @click="showPlaced = !showPlaced">
+          <div class="zop-cat-title-inner">
             <i class="fas fa-list"></i> Placed ({{ placedObjects.length }})
           </div>
-          <div class="zop-placed-list">
-            <div
-              v-for="(obj, idx) in placedObjects"
-              :key="obj.id"
-              class="zop-placed-item"
-            >
-              <span class="zop-placed-name">{{ obj.label }}</span>
-              <button class="zop-remove-btn" @click="removeObject(idx)" title="Remove">
-                <i class="fas fa-trash-alt"></i>
-              </button>
-            </div>
-          </div>
-          <div class="zop-action-row">
-            <button class="zop-toggle-btn" @click="toggleObjectsVisibility" :title="objectsVisible ? 'Hide 3D objects' : 'Show 3D objects'">
-              <i :class="objectsVisible ? 'fas fa-eye' : 'fas fa-eye-slash'"></i>
-              {{ objectsVisible ? 'Hide' : 'Show' }}
-            </button>
-            <button class="zop-clear-btn" @click="clearAllObjects">
-              <i class="fas fa-broom"></i> Clear All
+          <i :class="showPlaced ? 'fas fa-chevron-up' : 'fas fa-chevron-down'" class="zop-cat-chevron"></i>
+        </button>
+        <div v-if="showPlaced" class="zop-placed-list">
+          <div
+            v-for="(obj, idx) in placedObjects"
+            :key="obj.id"
+            class="zop-placed-item"
+          >
+            <span class="zop-placed-name">{{ obj.label }}</span>
+            <button class="zop-remove-btn" @click="removeObject(idx)" title="Remove">
+              <i class="fas fa-trash-alt"></i>
             </button>
           </div>
+        </div>
+        <div class="zop-action-row">
+          <button class="zop-toggle-btn" @click="toggleObjectsVisibility" :title="objectsVisible ? 'Hide 3D objects' : 'Show 3D objects'">
+            <i :class="objectsVisible ? 'fas fa-eye' : 'fas fa-eye-slash'"></i>
+            {{ objectsVisible ? 'Hide' : 'Show' }}
+          </button>
+          <button class="zop-clear-btn" @click="clearAllObjects">
+            <i class="fas fa-broom"></i> Clear All
+          </button>
         </div>
       </div>
     </div>
-  </Transition>
+  </div>
+
+  <!-- Mini restore button when hidden -->
+  <button v-if="visible && isHidden" class="zop-restore-btn" @click="isHidden = false" title="Show Zone Objects">
+    <i class="fas fa-cubes"></i>
+  </button>
 </template>
 
 <script setup>
-  import { ref, watch, onMounted, onUnmounted } from 'vue'
+  import { ref, reactive, computed, watch, onMounted, onUnmounted, onBeforeUnmount } from 'vue'
   import * as Cesium from 'cesium'
 
   const props = defineProps({
@@ -165,7 +207,45 @@
 
   const placedObjects = ref([])
   const objectsVisible = ref(true)
+  const isHidden = ref(false)
+  const showPlaced = ref(true)
   let placedEntities = [] // Cesium entity references for cleanup
+
+  // Category open state (all collapsed by default)
+  const catOpen = reactive({
+    vegetation: false,
+    buildings: false,
+    furniture: false,
+  })
+
+  // Drag state
+  const panelPos = ref({ x: 16, y: 70 })
+  const isDragging = ref(false)
+  let dragOffsetX = 0
+  let dragOffsetY = 0
+
+  const panelStyle = computed(() => ({
+    left: panelPos.value.x + 'px',
+    top: panelPos.value.y + 'px',
+  }))
+
+  function startDragPanel(e) {
+    isDragging.value = true
+    const el = e.target.closest('.zone-objects-panel')
+    const rect = el.getBoundingClientRect()
+    dragOffsetX = e.clientX - rect.left
+    dragOffsetY = e.clientY - rect.top
+  }
+
+  function onPanelMouseMove(e) {
+    if (!isDragging.value) return
+    panelPos.value.x = e.clientX - dragOffsetX
+    panelPos.value.y = e.clientY - dragOffsetY
+  }
+
+  function stopPanelDrag() {
+    isDragging.value = false
+  }
 
   // Object type configs: icon color, default size, label
   const OBJECT_TYPES = {
@@ -353,7 +433,10 @@
   }
 
   watch(() => props.visible, (v) => {
-    if (v) attachDropListeners()
+    if (v) {
+      isHidden.value = false
+      attachDropListeners()
+    }
     else detachDropListeners()
   })
 
@@ -371,6 +454,13 @@
 
   onMounted(() => {
     if (props.visible) attachDropListeners()
+    window.addEventListener('mousemove', onPanelMouseMove)
+    window.addEventListener('mouseup', stopPanelDrag)
+  })
+
+  onBeforeUnmount(() => {
+    window.removeEventListener('mousemove', onPanelMouseMove)
+    window.removeEventListener('mouseup', stopPanelDrag)
   })
 
   onUnmounted(() => {
@@ -382,8 +472,6 @@
 <style scoped>
   .zone-objects-panel {
     position: absolute;
-    top: 70px;
-    left: 16px;
     width: 260px;
     max-height: calc(100vh - 100px);
     background: rgba(15, 20, 32, 0.97);
@@ -398,26 +486,33 @@
     font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
   }
 
-  .panel-slide-enter-active,
-  .panel-slide-leave-active {
-    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-  }
-  .panel-slide-enter-from,
-  .panel-slide-leave-to {
-    opacity: 0;
-    transform: translateX(-20px);
-  }
-
-  .zop-header {
+  /* Toolbar */
+  .zop-toolbar {
     display: flex;
-    justify-content: space-between;
     align-items: center;
-    padding: 12px 14px;
+    gap: 8px;
+    padding: 10px 12px;
     background: rgba(34, 211, 160, 0.08);
     border-bottom: 1px solid rgba(34, 211, 160, 0.12);
   }
 
-  .zop-title {
+  .zop-drag {
+    width: 20px;
+    height: 28px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: grab;
+    color: rgba(255, 255, 255, 0.35);
+    border-radius: 4px;
+    transition: all 0.15s;
+    flex-shrink: 0;
+  }
+  .zop-drag:hover { color: rgba(255,255,255,0.7); background: rgba(255,255,255,0.06); }
+  .zop-drag:active { cursor: grabbing; color: white; }
+
+  .zop-toolbar-title {
+    flex: 1;
     color: #22d3a0;
     font-size: 13px;
     font-weight: 600;
@@ -426,48 +521,157 @@
     gap: 8px;
   }
 
-  .zop-close {
-    background: none;
+  .zop-hide-btn {
+    width: 26px;
+    height: 26px;
+    background: rgba(255,255,255,0.06);
     border: none;
-    color: rgba(255, 255, 255, 0.4);
+    border-radius: 6px;
+    color: rgba(255,255,255,0.4);
     cursor: pointer;
-    font-size: 14px;
-    padding: 4px;
-    transition: color 0.2s;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 11px;
+    transition: all 0.15s;
+    flex-shrink: 0;
   }
-  .zop-close:hover { color: white; }
+  .zop-hide-btn:hover { background: rgba(255,255,255,0.12); color: white; }
+
+  /* Restore button */
+  .zop-restore-btn {
+    position: absolute;
+    top: 70px;
+    left: 16px;
+    width: 36px;
+    height: 36px;
+    background: rgba(10, 14, 22, 0.95);
+    border: 1px solid rgba(34, 211, 160, 0.25);
+    border-radius: 8px;
+    color: #22d3a0;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 14px;
+    z-index: 1700;
+    transition: all 0.15s;
+    box-shadow: 0 4px 16px rgba(0,0,0,0.4);
+  }
+  .zop-restore-btn:hover { background: rgba(34, 211, 160, 0.15); }
 
   .zop-body {
     padding: 12px;
     overflow-y: auto;
     display: flex;
     flex-direction: column;
-    gap: 14px;
+    gap: 10px;
+    scrollbar-width: thin;
+    scrollbar-color: rgba(34,211,160,0.3) transparent;
   }
 
-  .zop-hint {
+  /* Visual schema */
+  .zop-schema {
+    padding: 10px;
+    background: rgba(34, 211, 160, 0.04);
+    border: 1px solid rgba(34, 211, 160, 0.12);
+    border-radius: 8px;
+  }
+
+  .schema-steps {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    margin-bottom: 8px;
+  }
+
+  .schema-step {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 4px;
+  }
+
+  .schema-icon {
+    width: 36px;
+    height: 36px;
+    background: rgba(34, 211, 160, 0.1);
+    border: 1px solid rgba(34, 211, 160, 0.25);
+    border-radius: 8px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 14px;
+    color: #22d3a0;
+  }
+
+  .schema-step span {
+    font-size: 9px;
+    color: rgba(255,255,255,0.5);
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    font-weight: 600;
+  }
+
+  .schema-arrow {
+    color: rgba(34, 211, 160, 0.4);
+    font-size: 12px;
+    margin-top: -14px;
+  }
+
+  .schema-hint {
     margin: 0;
-    font-size: 11px;
-    color: rgba(255, 255, 255, 0.45);
-    line-height: 1.5;
+    font-size: 10px;
+    color: rgba(255, 255, 255, 0.4);
+    line-height: 1.4;
+    text-align: center;
   }
 
-  .zop-category-title {
+  /* Category toggle */
+  .zop-cat-toggle {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    width: 100%;
+    padding: 8px 10px;
+    background: rgba(255,255,255,0.03);
+    border: 1px solid rgba(255,255,255,0.06);
+    border-radius: 6px;
+    color: rgba(255, 255, 255, 0.5);
     font-size: 11px;
     font-weight: 700;
     text-transform: uppercase;
     letter-spacing: 0.08em;
-    color: rgba(255, 255, 255, 0.5);
-    margin-bottom: 8px;
+    cursor: pointer;
+    transition: all 0.15s;
+    font-family: inherit;
+  }
+  .zop-cat-toggle:hover {
+    background: rgba(255,255,255,0.06);
+    color: rgba(255,255,255,0.7);
+  }
+  .zop-cat-toggle.placed {
+    border-color: rgba(34, 211, 160, 0.15);
+  }
+
+  .zop-cat-title-inner {
     display: flex;
     align-items: center;
     gap: 6px;
+  }
+
+  .zop-cat-chevron {
+    font-size: 9px;
+    width: 12px;
+    text-align: center;
   }
 
   .zop-items {
     display: grid;
     grid-template-columns: 1fr 1fr;
     gap: 6px;
+    margin-top: 6px;
   }
 
   .zop-item {
@@ -508,7 +712,7 @@
 
   .zop-placed {
     border-top: 1px solid rgba(255, 255, 255, 0.08);
-    padding-top: 12px;
+    padding-top: 10px;
   }
 
   .zop-placed-list {
@@ -517,6 +721,7 @@
     gap: 4px;
     max-height: 150px;
     overflow-y: auto;
+    margin-top: 6px;
   }
 
   .zop-placed-item {

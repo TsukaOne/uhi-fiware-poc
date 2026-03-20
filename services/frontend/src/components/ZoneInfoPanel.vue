@@ -1,22 +1,17 @@
 <template>
   <Transition name="panel-slide">
-    <div v-if="visible" class="zone-info-panel">
+    <div v-if="visible" class="zone-info-panel" :style="panelStyle" v-show="!isHidden">
 
-      <!-- Header -->
-      <div class="panel-header">
-        <div class="panel-header-left">
-          <div class="panel-icon">
-            <i class="fas fa-map-marked-alt"></i>
-          </div>
-          <div>
-            <div class="panel-title">Zone Analysis</div>
-            <div class="panel-subtitle">Current zone metrics</div>
-          </div>
+      <!-- Toolbar: drag handle + title + hide -->
+      <div class="zip-toolbar">
+        <div class="zip-drag" @mousedown.stop.prevent="startDrag" title="Drag to move">
+          <i class="fas fa-ellipsis-vertical"></i>
         </div>
-        <button class="panel-close" @click="$emit('close')">
-          <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
-            <path d="M1 1l12 12M13 1L1 13" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
-          </svg>
+        <span class="zip-toolbar-title">
+          <i class="fas fa-map-marked-alt"></i> Zone Analysis
+        </span>
+        <button class="zip-hide-btn" @click="isHidden = true" title="Hide panel">
+          <i class="fas fa-chevron-right"></i>
         </button>
       </div>
 
@@ -54,40 +49,82 @@
       <!-- Real data -->
       <template v-else-if="stats">
 
-        <!-- Divider: Input Features -->
-        <div class="panel-divider">
-          <span>Input Layer Statistics</span>
+        <!-- UHI Summary Cards (always visible) -->
+        <div class="uhi-summary" v-if="stats.layer_stats['uhi']">
+          <div class="uhi-card main">
+            <span class="uhi-card-label">Mean UHI</span>
+            <span class="uhi-card-value heat">{{ formatValue(stats.layer_stats['uhi'].mean, '') }}</span>
+          </div>
+          <div class="uhi-card">
+            <span class="uhi-card-label">Min</span>
+            <span class="uhi-card-value">{{ formatValue(stats.layer_stats['uhi'].min, '') }}</span>
+          </div>
+          <div class="uhi-card">
+            <span class="uhi-card-label">Max</span>
+            <span class="uhi-card-value">{{ formatValue(stats.layer_stats['uhi'].max, '') }}</span>
+          </div>
         </div>
 
-        <div class="stats-section">
-          <div
-            v-for="layer in displayLayers"
-            :key="layer.key"
-            class="layer-stat-card"
-          >
-            <div class="layer-stat-header">
-              <i :class="layer.icon" :style="{ color: layer.color }"></i>
-              <span class="layer-stat-name">{{ layer.label }}</span>
+        <!-- Zone Points Toggle (collapsed by default) -->
+        <button class="zip-dropdown-toggle" @click="showPoints = !showPoints">
+          <i :class="showPoints ? 'fas fa-chevron-up' : 'fas fa-chevron-down'"></i>
+          <span>Zone Points ({{ pointCount }})</span>
+        </button>
+        <div v-if="showPoints" class="zip-dropdown-body">
+          <div class="zip-points-list" v-if="geometry?.geoJSON?.coordinates">
+            <div v-for="(coord, i) in geometry.geoJSON.coordinates[0].slice(0, -1)" :key="i" class="zip-point-row">
+              <span class="zip-point-idx">{{ i + 1 }}</span>
+              <span class="zip-point-val">{{ coord[1].toFixed(5) }}, {{ coord[0].toFixed(5) }}</span>
             </div>
-            <div class="layer-stat-values" v-if="stats.layer_stats[layer.key]">
-              <div class="layer-stat-item">
-                <span class="lsi-label">Mean</span>
-                <span class="lsi-value">{{ formatValue(stats.layer_stats[layer.key].mean, layer.unit) }}</span>
-              </div>
-              <div class="layer-stat-item">
-                <span class="lsi-label">Min</span>
-                <span class="lsi-value dim">{{ formatValue(stats.layer_stats[layer.key].min, layer.unit) }}</span>
-              </div>
-              <div class="layer-stat-item">
-                <span class="lsi-label">Max</span>
-                <span class="lsi-value dim">{{ formatValue(stats.layer_stats[layer.key].max, layer.unit) }}</span>
-              </div>
-              <div class="layer-stat-item">
-                <span class="lsi-label">Std</span>
-                <span class="lsi-value dim">{{ formatValue(stats.layer_stats[layer.key].std, layer.unit) }}</span>
-              </div>
+          </div>
+          <div class="zip-points-list" v-else-if="geometry?.bounds">
+            <div class="zip-point-row">
+              <span class="zip-point-idx">NW</span>
+              <span class="zip-point-val">{{ geometry.bounds.maxLat.toFixed(5) }}, {{ geometry.bounds.minLon.toFixed(5) }}</span>
             </div>
-            <div v-else class="layer-stat-na">No data</div>
+            <div class="zip-point-row">
+              <span class="zip-point-idx">SE</span>
+              <span class="zip-point-val">{{ geometry.bounds.minLat.toFixed(5) }}, {{ geometry.bounds.maxLon.toFixed(5) }}</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Detailed stats dropdown -->
+        <button class="zip-dropdown-toggle" @click="showDetailedStats = !showDetailedStats">
+          <i :class="showDetailedStats ? 'fas fa-chevron-up' : 'fas fa-chevron-down'"></i>
+          <span>Input Layer Statistics</span>
+        </button>
+        <div v-if="showDetailedStats" class="zip-dropdown-body">
+          <div class="stats-section">
+            <div
+              v-for="layer in displayLayers"
+              :key="layer.key"
+              class="layer-stat-card"
+            >
+              <div class="layer-stat-header">
+                <i :class="layer.icon" :style="{ color: layer.color }"></i>
+                <span class="layer-stat-name">{{ layer.label }}</span>
+              </div>
+              <div class="layer-stat-values" v-if="stats.layer_stats[layer.key]">
+                <div class="layer-stat-item">
+                  <span class="lsi-label">Mean</span>
+                  <span class="lsi-value">{{ formatValue(stats.layer_stats[layer.key].mean, layer.unit) }}</span>
+                </div>
+                <div class="layer-stat-item">
+                  <span class="lsi-label">Min</span>
+                  <span class="lsi-value dim">{{ formatValue(stats.layer_stats[layer.key].min, layer.unit) }}</span>
+                </div>
+                <div class="layer-stat-item">
+                  <span class="lsi-label">Max</span>
+                  <span class="lsi-value dim">{{ formatValue(stats.layer_stats[layer.key].max, layer.unit) }}</span>
+                </div>
+                <div class="layer-stat-item">
+                  <span class="lsi-label">Std</span>
+                  <span class="lsi-value dim">{{ formatValue(stats.layer_stats[layer.key].std, layer.unit) }}</span>
+                </div>
+              </div>
+              <div v-else class="layer-stat-na">No data</div>
+            </div>
           </div>
         </div>
 
@@ -101,10 +138,15 @@
 
     </div>
   </Transition>
+
+  <!-- Mini restore button when hidden -->
+  <button v-if="visible && isHidden" class="zip-restore-btn" @click="isHidden = false" title="Show Zone Analysis">
+    <i class="fas fa-map-marked-alt"></i>
+  </button>
 </template>
 
 <script setup>
-  import { ref, computed, watch } from 'vue'
+  import { ref, computed, watch, onMounted, onBeforeUnmount } from 'vue'
 
   const PREDICTION_URL = '/prediction'
 
@@ -118,6 +160,57 @@
   const isLoading = ref(false)
   const loadError = ref(null)
   const stats = ref(null)
+  const isHidden = ref(false)
+  const showDetailedStats = ref(false)
+  const showPoints = ref(false)
+
+  // Drag state
+  const panelPos = ref({ x: -1, y: 70 })
+  const isDragging = ref(false)
+  let dragOffsetX = 0
+  let dragOffsetY = 0
+
+  const panelStyle = computed(() => {
+    if (panelPos.value.x < 0) return { top: panelPos.value.y + 'px', right: '16px' }
+    return { top: panelPos.value.y + 'px', left: panelPos.value.x + 'px', right: 'auto' }
+  })
+
+  function startDrag(e) {
+    isDragging.value = true
+    const el = e.target.closest('.zone-info-panel')
+    const rect = el.getBoundingClientRect()
+    if (panelPos.value.x < 0) panelPos.value.x = rect.left
+    dragOffsetX = e.clientX - rect.left
+    dragOffsetY = e.clientY - rect.top
+  }
+
+  function onMouseMove(e) {
+    if (!isDragging.value) return
+    panelPos.value.x = e.clientX - dragOffsetX
+    panelPos.value.y = e.clientY - dragOffsetY
+  }
+
+  function stopDrag() {
+    isDragging.value = false
+  }
+
+  onMounted(() => {
+    window.addEventListener('mousemove', onMouseMove)
+    window.addEventListener('mouseup', stopDrag)
+  })
+
+  onBeforeUnmount(() => {
+    window.removeEventListener('mousemove', onMouseMove)
+    window.removeEventListener('mouseup', stopDrag)
+  })
+
+  const pointCount = computed(() => {
+    if (props.geometry?.geoJSON?.coordinates) {
+      return props.geometry.geoJSON.coordinates[0].length - 1
+    }
+    if (props.geometry?.bounds) return 4
+    return 0
+  })
 
   const displayLayers = [
     { key: 'ndvi',              label: 'NDVI',               icon: 'fas fa-leaf',                color: '#4ade80', unit: '' },
@@ -140,8 +233,10 @@
   }
 
   async function fetchStats() {
+    console.log('test LOL')
     if (!props.geometry?.geoJSON) return
 
+    console.log('Fetching stats for geometry:', props.geometry)
     isLoading.value = true
     loadError.value = null
     stats.value = null
@@ -165,11 +260,13 @@
     }
   }
 
-  // Fetch when geometry changes or panel becomes visible
   watch(
     () => [props.visible, props.geometry],
     ([vis, geom]) => {
-      if (vis && geom?.geoJSON) fetchStats()
+      if (vis && geom?.geoJSON) {
+        isHidden.value = false
+        fetchStats()
+      }
     },
     { immediate: true }
   )
@@ -230,67 +327,79 @@
     opacity: 0;
   }
 
-  .panel-header {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    padding: 16px 16px 12px;
-    border-bottom: 1px solid rgba(255,255,255,0.06);
-  }
-
-  .panel-header-left {
+  /* Toolbar */
+  .zip-toolbar {
     display: flex;
     align-items: center;
-    gap: 10px;
+    gap: 8px;
+    padding: 10px 12px;
+    background: rgba(34, 211, 160, 0.06);
+    border-bottom: 1px solid rgba(34, 211, 160, 0.12);
   }
 
-  .panel-icon {
-    width: 34px;
-    height: 34px;
-    background: rgba(34, 211, 160, 0.1);
-    border: 1px solid rgba(34, 211, 160, 0.25);
-    border-radius: 8px;
+  .zip-drag {
+    width: 20px;
+    height: 28px;
     display: flex;
     align-items: center;
     justify-content: center;
+    cursor: grab;
+    color: rgba(255, 255, 255, 0.35);
+    border-radius: 4px;
+    transition: all 0.15s;
     flex-shrink: 0;
+  }
+  .zip-drag:hover { color: rgba(255,255,255,0.7); background: rgba(255,255,255,0.06); }
+  .zip-drag:active { cursor: grabbing; color: white; }
+
+  .zip-toolbar-title {
+    flex: 1;
     color: #22d3a0;
-    font-size: 14px;
+    font-size: 13px;
+    font-weight: 600;
+    display: flex;
+    align-items: center;
+    gap: 8px;
   }
 
-  .panel-title {
-    font-size: 14px;
-    font-weight: 700;
-    color: white;
-    letter-spacing: 0.05em;
-    text-transform: uppercase;
-  }
-
-  .panel-subtitle {
-    font-size: 10px;
-    color: rgba(255,255,255,0.4);
-    letter-spacing: 0.08em;
-    margin-top: 1px;
-  }
-
-  .panel-close {
-    width: 28px;
-    height: 28px;
+  .zip-hide-btn {
+    width: 26px;
+    height: 26px;
     background: rgba(255,255,255,0.06);
     border: none;
     border-radius: 6px;
-    color: rgba(255,255,255,0.5);
+    color: rgba(255,255,255,0.4);
     cursor: pointer;
     display: flex;
     align-items: center;
     justify-content: center;
+    font-size: 11px;
     transition: all 0.15s;
     flex-shrink: 0;
   }
-  .panel-close:hover {
-    background: rgba(255,255,255,0.12);
-    color: white;
+  .zip-hide-btn:hover { background: rgba(255,255,255,0.12); color: white; }
+
+  /* Restore button */
+  .zip-restore-btn {
+    position: absolute;
+    top: 70px;
+    right: 16px;
+    width: 36px;
+    height: 36px;
+    background: rgba(10, 14, 22, 0.95);
+    border: 1px solid rgba(34, 211, 160, 0.25);
+    border-radius: 8px;
+    color: #22d3a0;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 14px;
+    z-index: 1500;
+    transition: all 0.15s;
+    box-shadow: 0 4px 16px rgba(0,0,0,0.4);
   }
+  .zip-restore-btn:hover { background: rgba(34, 211, 160, 0.15); }
 
   .zone-summary {
     margin: 12px 16px;
@@ -329,28 +438,109 @@
     border-radius: 4px;
   }
 
-  .panel-divider {
+  /* UHI Summary Cards */
+  .uhi-summary {
+    display: flex;
+    gap: 6px;
+    padding: 12px 16px 0;
+  }
+
+  .uhi-card {
+    flex: 1;
+    padding: 10px 8px;
+    background: rgba(255,255,255,0.03);
+    border: 1px solid rgba(255,255,255,0.06);
+    border-radius: 8px;
+    text-align: center;
+  }
+
+  .uhi-card.main {
+    background: rgba(248, 113, 113, 0.06);
+    border-color: rgba(248, 113, 113, 0.2);
+  }
+
+  .uhi-card-label {
+    display: block;
+    font-size: 8px;
+    color: rgba(255,255,255,0.4);
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    margin-bottom: 4px;
+  }
+
+  .uhi-card-value {
+    font-size: 14px;
+    font-weight: 700;
+    color: white;
+  }
+
+  .uhi-card-value.heat {
+    color: #f87171;
+    font-size: 16px;
+  }
+
+  /* Dropdown toggles */
+  .zip-dropdown-toggle {
     display: flex;
     align-items: center;
-    gap: 10px;
-    padding: 0 16px;
-    margin: 8px 0;
-  }
-
-  .panel-divider span {
+    gap: 8px;
+    width: calc(100% - 32px);
+    margin: 8px 16px 0;
+    padding: 8px 10px;
+    background: rgba(255,255,255,0.03);
+    border: 1px solid rgba(255,255,255,0.06);
+    border-radius: 6px;
+    color: rgba(255,255,255,0.5);
     font-size: 10px;
+    font-weight: 600;
     text-transform: uppercase;
-    letter-spacing: 0.12em;
-    color: rgba(255,255,255,0.3);
-    white-space: nowrap;
+    letter-spacing: 0.08em;
+    cursor: pointer;
+    transition: all 0.15s;
+    font-family: 'Courier New', monospace;
+  }
+  .zip-dropdown-toggle:hover {
+    background: rgba(255,255,255,0.06);
+    color: rgba(255,255,255,0.7);
+  }
+  .zip-dropdown-toggle i {
+    font-size: 9px;
+    width: 12px;
+    text-align: center;
   }
 
-  .panel-divider::before,
-  .panel-divider::after {
-    content: '';
-    flex: 1;
-    height: 1px;
-    background: rgba(255,255,255,0.07);
+  .zip-dropdown-body {
+    margin: 0 16px;
+    padding: 8px 0;
+  }
+
+  /* Points list */
+  .zip-points-list {
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+    max-height: 120px;
+    overflow-y: auto;
+  }
+
+  .zip-point-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 3px 8px;
+    font-size: 10px;
+  }
+
+  .zip-point-idx {
+    width: 20px;
+    color: rgba(34, 211, 160, 0.6);
+    font-weight: 700;
+    flex-shrink: 0;
+  }
+
+  .zip-point-val {
+    color: rgba(255,255,255,0.5);
+    font-family: 'Courier New', monospace;
   }
 
   /* Loading */
@@ -377,7 +567,6 @@
     to { transform: rotate(360deg); }
   }
 
-  /* Error */
   .error-section {
     display: flex;
     flex-direction: column;
@@ -399,13 +588,10 @@
     cursor: pointer;
     transition: all 0.15s;
   }
-  .retry-btn:hover {
-    background: rgba(248, 113, 113, 0.2);
-  }
+  .retry-btn:hover { background: rgba(248, 113, 113, 0.2); }
 
-  /* Layer stats */
+  /* Detailed layer stats */
   .stats-section {
-    padding: 0 16px 8px;
     display: flex;
     flex-direction: column;
     gap: 6px;

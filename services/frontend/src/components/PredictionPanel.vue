@@ -39,21 +39,67 @@
         </div>
       </div>
 
-      <!-- Objects summary -->
-      <div class="objects-summary" v-if="zoneObjects.length > 0">
+      <!-- Zone Points Toggle (collapsed by default) -->
+      <button class="pp-dropdown-toggle" @click="showPoints = !showPoints">
+        <i :class="showPoints ? 'fas fa-chevron-up' : 'fas fa-chevron-down'"></i>
+        <span>Zone Points ({{ pointCount }})</span>
+      </button>
+      <div v-if="showPoints" class="pp-dropdown-body">
+        <div class="pp-points-list" v-if="geometry?.geoJSON?.coordinates">
+          <div v-for="(coord, i) in geometry.geoJSON.coordinates[0].slice(0, -1)" :key="i" class="pp-point-row">
+            <span class="pp-point-idx">{{ i + 1 }}</span>
+            <span class="pp-point-val">{{ coord[1].toFixed(5) }}, {{ coord[0].toFixed(5) }}</span>
+          </div>
+        </div>
+        <div class="pp-points-list" v-else-if="geometry?.bounds">
+          <div class="pp-point-row">
+            <span class="pp-point-idx">NW</span>
+            <span class="pp-point-val">{{ geometry.bounds.maxLat.toFixed(5) }}, {{ geometry.bounds.minLon.toFixed(5) }}</span>
+          </div>
+          <div class="pp-point-row">
+            <span class="pp-point-idx">SE</span>
+            <span class="pp-point-val">{{ geometry.bounds.minLat.toFixed(5) }}, {{ geometry.bounds.maxLon.toFixed(5) }}</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Objects dropdown (collapsed by default) -->
+      <button v-if="zoneObjects.length > 0" class="pp-dropdown-toggle" @click="showObjects = !showObjects">
+        <i :class="showObjects ? 'fas fa-chevron-up' : 'fas fa-chevron-down'"></i>
+        <span>Objects ({{ zoneObjects.length }})</span>
+      </button>
+      <div v-if="showObjects && zoneObjects.length > 0" class="pp-dropdown-body">
+        <div class="pp-objects-list">
+          <div v-for="obj in zoneObjects" :key="obj.id" class="pp-object-row">
+            <span class="pp-object-name">{{ obj.label || obj.type }}</span>
+            <span class="pp-object-pos">{{ obj.lat.toFixed(4) }}, {{ obj.lon.toFixed(4) }}</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Objects summary badge (when not expanded) -->
+      <div class="objects-summary" v-if="zoneObjects.length > 0 && !showObjects">
         <i class="fas fa-cubes"></i>
         {{ zoneObjects.length }} object{{ zoneObjects.length > 1 ? 's' : '' }} placed
       </div>
 
-      <!-- Pre-prediction: just the button -->
+      <!-- Pre-prediction: button + zone size warning -->
       <div v-if="!predictionResult" class="predict-section">
+        <div v-if="estimatedPixels > 50000" class="zone-size-warning">
+          <i class="fas fa-clock"></i>
+          <span>
+            Large zone (~{{ Math.round(estimatedPixels / 1000) }}k pixels) — prediction may take
+            {{ estimatedPixels > 200000 ? 'several minutes' : 'up to a minute' }}.
+          </span>
+        </div>
         <button class="btn-predict" @click="launchPrediction" :class="{ loading: isLoading }">
           <span v-if="!isLoading">
             <i class="fas fa-bolt"></i>
             Run Prediction
           </span>
-          <span v-else class="loading-dots">
-            <span>·</span><span>·</span><span>·</span>
+          <span v-else class="loading-state">
+            <span class="loading-dots"><span>·</span><span>·</span><span>·</span></span>
+            <span class="loading-timer" v-if="elapsedSeconds > 0">{{ elapsedSeconds }}s</span>
           </span>
         </button>
       </div>
@@ -156,7 +202,7 @@
 </template>
 
 <script setup>
-import { ref, computed } from 'vue'
+import { ref, computed, onBeforeUnmount } from 'vue'
 
 const props = defineProps({
   visible: { type: Boolean, default: false },
@@ -170,6 +216,52 @@ const emit = defineEmits(['close', 'predict'])
 const PREDICTION_URL = '/prediction'
 
 const isLoading = ref(false)
+const elapsedSeconds = ref(0)
+let elapsedTimer = null
+
+// Collapsible sections (both hidden at t0)
+const showPoints = ref(false)
+const showObjects = ref(false)
+
+const pointCount = computed(() => {
+  if (props.geometry?.geoJSON?.coordinates) {
+    return props.geometry.geoJSON.coordinates[0].length - 1
+  }
+  if (props.geometry?.bounds) return 4
+  return 0
+})
+
+// Rough pixel estimate based on zone area (~10m resolution)
+const estimatedPixels = computed(() => {
+  if (!props.geometry) return 0
+  const bounds = props.geometry.bounds
+  if (bounds) {
+    const latDiff = Math.abs(bounds.maxLat - bounds.minLat)
+    const lonDiff = Math.abs(bounds.maxLon - bounds.minLon)
+    // ~111km per degree, 10m resolution
+    return Math.round((latDiff * 111000 / 10) * (lonDiff * 111000 * Math.cos(bounds.minLat * Math.PI / 180) / 10))
+  }
+  const pts = props.geometry.points
+  if (pts && pts.length >= 3) {
+    const lats = pts.map(p => p.latitude)
+    const lons = pts.map(p => p.longitude)
+    const latDiff = Math.max(...lats) - Math.min(...lats)
+    const lonDiff = Math.max(...lons) - Math.min(...lons)
+    return Math.round((latDiff * 111000 / 10) * (lonDiff * 111000 * Math.cos(Math.min(...lats) * Math.PI / 180) / 10) * 0.6)
+  }
+  return 0
+})
+
+function startTimer() {
+  elapsedSeconds.value = 0
+  elapsedTimer = setInterval(() => { elapsedSeconds.value++ }, 1000)
+}
+
+function stopTimer() {
+  if (elapsedTimer) { clearInterval(elapsedTimer); elapsedTimer = null }
+}
+
+onBeforeUnmount(() => stopTimer())
 const predictionResult = ref(null)
 const predictionError = ref(null)
 const afterStats = ref(null)
@@ -225,10 +317,6 @@ async function fetchAfterStats() {
     afterStats.value = null
     return
   }
-  // We don't have a "with objects" stats route, so we skip after-stats
-  // if no objects were placed. The comparison only makes sense with objects.
-  // For now, we re-use the zone stats route (which doesn't apply object impacts).
-  // The delta will be visible in the prediction result itself.
   afterStats.value = null
 }
 
@@ -239,6 +327,7 @@ async function launchPrediction() {
   predictionResult.value = null
   predictionError.value = null
   afterStats.value = null
+  startTimer()
 
   try {
     const body = {
@@ -274,6 +363,7 @@ async function launchPrediction() {
     predictionError.value = err.message || 'Unknown error'
   } finally {
     isLoading.value = false
+    stopTimer()
   }
 }
 
@@ -409,6 +499,100 @@ function rerunPrediction() {
   font-family: 'Courier New', monospace;
 }
 
+/* Dropdown toggles */
+.pp-dropdown-toggle {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: calc(100% - 32px);
+  margin: 8px 16px 0;
+  padding: 8px 10px;
+  background: rgba(255,255,255,0.03);
+  border: 1px solid rgba(255,255,255,0.06);
+  border-radius: 6px;
+  color: rgba(255,255,255,0.5);
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  cursor: pointer;
+  transition: all 0.15s;
+  font-family: 'Courier New', monospace;
+}
+.pp-dropdown-toggle:hover {
+  background: rgba(255,255,255,0.06);
+  color: rgba(255,255,255,0.7);
+}
+.pp-dropdown-toggle i:first-child {
+  font-size: 9px;
+  width: 12px;
+  text-align: center;
+}
+
+.pp-dropdown-body {
+  margin: 0 16px;
+  padding: 8px 0;
+}
+
+/* Points list */
+.pp-points-list {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  max-height: 120px;
+  overflow-y: auto;
+}
+
+.pp-point-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 3px 8px;
+  font-size: 10px;
+}
+
+.pp-point-idx {
+  width: 20px;
+  color: rgba(34, 211, 160, 0.6);
+  font-weight: 700;
+  flex-shrink: 0;
+}
+
+.pp-point-val {
+  color: rgba(255,255,255,0.5);
+  font-family: 'Courier New', monospace;
+}
+
+/* Objects list */
+.pp-objects-list {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  max-height: 120px;
+  overflow-y: auto;
+}
+
+.pp-object-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 4px 8px;
+  background: rgba(255,255,255,0.02);
+  border-radius: 4px;
+  font-size: 10px;
+}
+
+.pp-object-name {
+  color: rgba(255,255,255,0.6);
+  font-weight: 600;
+}
+
+.pp-object-pos {
+  color: rgba(255,255,255,0.35);
+  font-family: 'Courier New', monospace;
+  font-size: 9px;
+}
+
 .objects-summary {
   margin: 8px 16px 0;
   padding: 6px 10px;
@@ -455,6 +639,37 @@ function rerunPrediction() {
 .btn-predict.loading {
   cursor: wait;
   opacity: 0.7;
+}
+
+.zone-size-warning {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 10px 12px;
+  margin-bottom: 10px;
+  background: rgba(251, 191, 36, 0.06);
+  border: 1px solid rgba(251, 191, 36, 0.2);
+  border-radius: 8px;
+  font-size: 11px;
+  color: rgba(251, 191, 36, 0.8);
+  line-height: 1.5;
+}
+
+.zone-size-warning i {
+  margin-top: 2px;
+  flex-shrink: 0;
+}
+
+.loading-state {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.loading-timer {
+  font-size: 12px;
+  color: rgba(34, 211, 160, 0.6);
+  font-variant-numeric: tabular-nums;
 }
 
 .loading-dots {

@@ -30,6 +30,7 @@ let mouseHandler = null
 let previewEntity = null
 let currentMousePosition = null
 let pointEntities = []
+let drawingKeyHandler = null
 
 // GeoServer WMS endpoint
 const GEOSERVER_URL = window.location.port === '3000' 
@@ -38,9 +39,9 @@ const GEOSERVER_URL = window.location.port === '3000'
 
 // Brussels center coordinates (WGS84)
 const BRUSSELS_CENTER = {
-  longitude: 4.3517,
-  latitude: 50.8503,
-  height: 5000
+  longitude: 4.3817,
+  latitude: 50.6403,
+  height: 17000
 }
 
 
@@ -118,11 +119,11 @@ export function useCesiumViewer(props, emit) {
       destination: Cesium.Cartesian3.fromDegrees(
         BRUSSELS_CENTER.longitude,
         BRUSSELS_CENTER.latitude,
-        500
+        BRUSSELS_CENTER.height
       ),
       orientation: {
         heading: Cesium.Math.toRadians(0),
-        pitch: Cesium.Math.toRadians(-50),
+        pitch: Cesium.Math.toRadians(-40),
         roll: 0
       },
       duration: 0
@@ -221,13 +222,25 @@ export function useCesiumViewer(props, emit) {
       controller.translateEventTypes = [
         Cesium.CameraEventType.LEFT_DRAG
      ]
+
+      const focus = getCameraFocusPoint(viewer)
+      if (!focus) return
+
+      const carto = Cesium.Cartographic.fromCartesian(focus)
+
+      // garder une hauteur cohérente
+      const height = viewer.camera.positionCartographic.height
       
       // Force camera to strict top-down orientation
       viewer.camera.setView({
-        destination: viewer.camera.position,
+        destination: Cesium.Cartesian3.fromRadians(
+          carto.longitude,
+          carto.latitude,
+          height
+        ),
         orientation: {
-          heading: Cesium.Math.toRadians(0),
-          pitch: Cesium.Math.toRadians(-90),
+          heading: 0,
+          pitch: -Cesium.Math.PI_OVER_TWO,
           roll: 0
         }
       })
@@ -337,11 +350,20 @@ export function useCesiumViewer(props, emit) {
         updateSunSimulation(true, props.sunSimTime)
       }
       
-      // Move camera to 3D perspective 
+      const focus = getCameraFocusPoint(viewer)
+      if (!focus) return
+
+      const carto = Cesium.Cartographic.fromCartesian(focus)
+      const height = viewer.camera.positionCartographic.height
+      
       viewer.camera.flyTo({
-        destination: viewer.camera.position,
+        destination: Cesium.Cartesian3.fromRadians(
+          carto.longitude,
+          carto.latitude - 0.00005,
+          height 
+        ),
         orientation: {
-          heading: Cesium.Math.toRadians(45),
+          heading: Cesium.Math.toRadians(0),
           pitch: Cesium.Math.toRadians(-45),
           roll: 0
         },
@@ -349,6 +371,21 @@ export function useCesiumViewer(props, emit) {
       })
       
     }
+  }
+
+  function getCameraFocusPoint(viewer) {
+    const scene = viewer.scene
+    const camera = viewer.camera
+
+    const center = new Cesium.Cartesian2(
+      scene.canvas.clientWidth / 2,
+      scene.canvas.clientHeight / 2
+    )
+
+    const ray = camera.getPickRay(center)
+    if (!ray) return null
+
+    return scene.globe.pick(ray, scene)
   }
 
   // ========================================
@@ -425,6 +462,36 @@ export function useCesiumViewer(props, emit) {
       finishDrawing()
     }, Cesium.ScreenSpaceEventType.RIGHT_CLICK)
 
+    // Keyboard shortcuts: Ctrl+Z to undo last point, Escape to cancel
+    drawingKeyHandler = function onKeyDown(e) {
+      if (!isDrawing) return
+      if ((e.ctrlKey || e.metaKey) && e.key === 'z') {
+        e.preventDefault()
+        undoLastPoint()
+      }
+      if (e.key === 'Escape') {
+        e.preventDefault()
+        stopDrawing()
+        if (emit) emit('drawing-active', false)
+      }
+    }
+    document.addEventListener('keydown', drawingKeyHandler)
+  }
+
+  function undoLastPoint() {
+    if (!isDrawing || drawnPoints.length === 0) return
+    drawnPoints.pop()
+    const lastEntity = pointEntities.pop()
+    if (lastEntity) viewer.entities.remove(lastEntity)
+    // Update preview
+    if (previewEntity) {
+      viewer.entities.remove(previewEntity)
+      previewEntity = null
+    }
+    if (currentMousePosition) {
+      updateDrawingPreview(currentMousePosition)
+    }
+    viewer.scene.requestRender()
   }
   // Update drawing visualization (preview entity and legend)
   function updateDrawingPreview(mousePos) {
@@ -580,6 +647,11 @@ export function useCesiumViewer(props, emit) {
       mouseHandler.removeInputAction(Cesium.ScreenSpaceEventType.RIGHT_CLICK)
       mouseHandler.destroy()
       mouseHandler = null
+    }
+
+    if (drawingKeyHandler) {
+      document.removeEventListener('keydown', drawingKeyHandler)
+      drawingKeyHandler = null
     }
   }
 
@@ -996,6 +1068,7 @@ export function useCesiumViewer(props, emit) {
     cesiumContainer,
     getViewer: () => viewer,
     getTileset: () => buildingTileset,
+    undoLastPoint,
     flyTo: (longitude, latitude, height) => {
       if (viewer) {
         viewer.camera.flyTo({

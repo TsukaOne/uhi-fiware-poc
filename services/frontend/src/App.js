@@ -41,7 +41,7 @@ export function useAppState() {
       name: 'UHI Heat Risk',
       description: 'Heat island prediction (0-1)',
       wmsLayer: 'uhi:uhi_prediction',
-      visible: false,
+      visible: true,
       opacity: 0.7,
       category: 'uhi_maps',
       legend: {
@@ -179,7 +179,7 @@ export function useAppState() {
     }
   ])
 
-  const activeLayers = ref(['ndvi'])
+  const activeLayers = ref(['uhi_prediction'])
 
   // ========================================
   // VIEW MODE HANDLERS
