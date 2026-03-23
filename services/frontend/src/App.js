@@ -10,8 +10,6 @@ export function useAppState() {
   const showLayers = ref(false)
   const showToolbox = ref(false)
 
-  
-
   // 3D Tileset state
   const buildingVisible = ref(true)
   const treeVisible = ref(false)
