@@ -1,0 +1,43 @@
+.selection-overlay-wrapper {
+  position: absolute;
+  inset: 0;
+  z-index: 1000;
+  pointer-events: none;
+}
+
+.selection-svg {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+.zone-badge {
+  position: absolute;
+  pointer-events: none;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+}
+
+.zone-badge-label {
+  font-family: 'Courier New', monospace;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.15em;
+  color: #22d3a0;
+  text-shadow: 0 0 12px rgba(34, 211, 160, 0.8);
+  white-space: nowrap;
+  background: rgba(0, 0, 0, 0.5);
+  padding: 3px 8px;
+  border-radius: 3px;
+  border: 1px solid rgba(34, 211, 160, 0.3);
+}
+
+.zone-badge-area {
+  font-family: 'Courier New', monospace;
+  font-size: 13px;
+  font-weight: 700;
+  color: white;
+  text-shadow: 0 0 8px rgba(255,255,255,0.5);
+}

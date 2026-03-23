@@ -56,6 +56,7 @@
         </button>
       </div>
     </nav>
+
     <!-- TOOLBOX MINI BAR -->
     <div v-if="showToolbox" class="toolbox-bar" :style="toolboxStyle">
       <div
@@ -169,9 +170,7 @@
       </div>
     </Transition>
 
-    <!-- ======================================== -->
-    <!-- STEP 2 : SELECTION OVERLAY (SVG cutout) -->
-    <!-- ======================================== -->
+    <!--SELECTION OVERLAY --> 
     <SelectionOverlay
       :visible="showSelectionOverlay"
       :geometry="activeGeometry"
@@ -179,10 +178,10 @@
       :viewMode="viewMode"
     />
 
-    <!-- ======================================== -->
+   
     <!-- WORKFLOW BOTTOM BAR        -->
     <!-- Appears after drawing, before prediction -->
-    <!-- ======================================== -->
+
     <Transition name="bar-slide">
       <div v-if="showWorkflowBar" class="workflow-bar">
         <div
@@ -241,9 +240,8 @@
       </div>
     </Transition>
 
-    <!-- ======================================== -->
+   
     <!-- TOOL MODAL (Metadata / Download)        -->
-    <!-- ======================================== -->
     <Transition name="modal-fade">
       <div v-if="showToolModal && toolModalType === 'download'" class="tool-modal-overlay" @click.self="closeToolModal">
         <div class="tool-modal">
@@ -381,9 +379,8 @@
       </div>
     </Transition>
 
-    <!-- ======================================== -->
-    <!-- DOWNLOAD CONFIRM DIALOG                 -->
-    <!-- ======================================== -->
+   
+    <!-- DOWNLOAD CONFIRM DIALOG -->
     <Transition name="modal-fade">
       <div v-if="showDownloadConfirm" class="tool-modal-overlay" @click.self="showDownloadConfirm = false">
         <div class="tool-modal confirm-modal">
@@ -408,9 +405,8 @@
       </div>
     </Transition>
 
-    <!-- ======================================== -->
+    
     <!-- ZONE OBJECTS PANEL (drag & drop 3D)     -->
-    <!-- ======================================== -->
     <ZoneObjectsPanel
       :visible="showZoneObjectsPanel"
       :geometry="activeGeometry"
@@ -418,18 +414,15 @@
       @objects-changed="onZoneObjectsChanged"
     />
 
-    <!-- ======================================== -->
+    
     <!-- ZONE INFO PANEL (right side, zone data) -->
-    <!-- ======================================== -->
     <ZoneInfoPanel
       :visible="showZoneInfoPanel"
       :geometry="activeGeometry"
       ref="zoneInfoPanelRef"
     />
 
-    <!-- ======================================== -->
     <!-- PREDICTION PANEL (replaces info panel)  -->
-    <!-- ======================================== -->
     <PredictionPanel
       :visible="showPredictionPanel"
       :geometry="activeGeometry"
@@ -551,15 +544,29 @@
 </template>
 
 <script setup>
-  import { useAppState } from './App.js'
-  import CesiumViewer from './components/CesiumViewer.vue'
-  import LayerControls from './components/LayerControls.vue'
-  import { ref, computed, watch, nextTick, onMounted, onBeforeUnmount } from 'vue'
-  import SelectionOverlay from './components/SelectionOverlay.vue'
-  import PredictionPanel from './components/PredictionPanel.vue'
-  import ZoneObjectsPanel from './components/ZoneObjectsPanel.vue'
-  import ZoneInfoPanel from './components/ZoneInfoPanel.vue'
-  import PixelInfoPanel from './components/PixelInfoPanel.vue'
+    import { ref, computed, watch, nextTick, onMounted, onBeforeUnmount } from 'vue'
+
+    // Components
+    import CesiumViewer     from './components/CesiumViewer/CesiumViewer.vue'
+    import LayerControls    from './components/LayerControls/LayerControls.vue'
+    import SelectionOverlay from './components/SelectionOverlay/SelectionOverlay.vue'
+    import PredictionPanel  from './components/PredictionPanel/PredictionPanel.vue'
+    import ZoneObjectsPanel from './components/ZoneObjectsPanel/ZoneObjectsPanel.vue'
+    import ZoneInfoPanel    from './components/ZoneInfoPanel/ZoneInfoPanel.vue'
+    import PixelInfoPanel   from './components/PixelInfoPanel/PixelInfoPanel.vue'
+
+    // Composables
+    import { useAppState }   from './App.js'
+    import { predictionApi } from './services/predictionApi.js'
+    import { orionApi }      from './services/orionApi.js'
+    import { useDraggable }  from './composables/App/useDraggable.js'
+    import { useWorkflow }   from './composables/App/useWorkflow.js'
+    import { usePixelQuery } from './composables/App/usePixelQuery.js'
+    import { useLayerInfo }  from './composables/App/useLayerInfo.js'
+    import { useDownload }   from './composables/App/useDownload.js'
+
+
+  // ── Global app state (view mode, layers, drawing, swipe, sun sim) ──────────
   const {
     viewMode, showLayers, layers, activeLayers, buildingVisible, treeVisible,
     showToolbox, drawingMode, showPredictMenu, drawnGeometries,
@@ -569,28 +576,108 @@
     swipeEnabled, swipeLeftLayerId, swipeRightLayerId, swipePosition, toggleSwipe,
     sunSimEnabled, sunSimTime, toggleSunSim, setSunSimTime
   } = useAppState()
-  
+
+
+  // ── Cesium viewer ref ───────────────────────────────────────────────────────
   const cesiumViewerRef = ref(null)
+  const layerControlsRef = ref(null)
+  const zoneInfoPanelRef = ref(null)
   const cesiumViewerInstance = computed(() =>
     cesiumViewerRef.value?.getViewer?.() ?? null
   )
 
-  // T_base + UHI range state
-  const tBase = ref(15.0)
-  const layerControlsRef = ref(null)
+
+  // ── Draggable floating panels ───────────────────────────────────────────────
+  // useDraggable returns: { style, startDrag, onMouseMove, stopDrag }
+  // Destructuring with aliases preserves the existing template variable names.
+  const {
+    style: toolboxStyle,
+    startDrag: startDragToolbox,
+    onMouseMove: onToolboxMouseMove,
+    stopDrag: stopToolboxDrag,
+  } = useDraggable(window.innerWidth / 2 - 200, 90)
+
+  const {
+    style: tempPanelStyle,
+    startDrag: startDragTempPanel,
+    onMouseMove: onTempPanelMouseMove,
+    stopDrag: stopTempPanelDrag,
+  } = useDraggable(window.innerWidth - 260, 100)
+
+
+  // ── Prediction workflow state machine ───────────────────────────────────────
+  const {
+    activeGeometry, showSelectionOverlay, showWorkflowBar, showPredictionPanel,
+    workflowStep, showZoneObjectsPanel, showZoneInfoPanel, zoneObjects,
+    predictionOverlay, zoneStatsData, predictionHistory,
+    onGeometryDrawnPredict, goToStep, goToPredict, backToObjects,
+    closePredictionPanel, cancelWorkflow, onZoneObjectsChanged, onPredict,
+  } = useWorkflow({
+    addGeometry,
+    stopDrawing,
+    set3D,
+    getViewMode: () => viewMode.value,
+  })
+
+
+  // ── Drawing state ───────────────────────────────────────────────────────────
+  const isDrawingActive = ref(false)
+  function onDrawingActive(active) { isDrawingActive.value = active }
+
+  // Lock 3D interaction while the user is drawing or in the workflow
+  const isWorkflowActive = computed(
+    () => isDrawingActive.value || showWorkflowBar.value
+  )
+
+  // Drawing always starts in 2D for a clear top-down view
+  watch(drawingMode, (mode) => {
+    if (mode && viewMode.value !== '2D') set2D()
+  })
+
+
+  // ── Pixel query (click on map → show layer values) ──────────────────────────
+  const { showPixelInfo, pixelData, pixelLoading, pixelScreenX, pixelScreenY, onPixelClick } =
+    usePixelQuery({
+      isBlocked: () => isWorkflowActive.value || downloadMode.value,
+    })
+
+
+  // ── Layer statistics modal ──────────────────────────────────────────────────
+  const {
+    showLayerInfoChoice, showLayerInfoResults, layerInfoLoading, layerInfoError,
+    layerInfoStats, layerInfoName, layerInfoRegionLabel, infoMode,
+    onLayerMetadata, onInfoChoice, onInfoGeometryDrawn, closeLayerInfoResults,
+  } = useLayerInfo({
+    getLayers:              () => layers,
+    startDrawingBoundingBox,
+    startDrawingPolygon,
+    addGeometry,
+    stopDrawing,
+  })
+
+
+  // ── Download flow ───────────────────────────────────────────────────────────
+  const {
+    showToolModal, toolModalType, toolModalLayerId, toolModalLayerName,
+    showDownloadConfirm, downloadConfirmText, isDownloading, downloadMode,
+    onLayerDownload, closeToolModal, onToolModalChoice,
+    onDownloadGeometryDrawn, executeDownload,
+  } = useDownload({
+    getLayers:              () => layers,
+    startDrawingBoundingBox,
+    addGeometry,
+    stopDrawing,
+  })
+
+
+  // ── Temperature + UHI range data ────────────────────────────────────────────
+  const tBase  = ref(15.0)
   const uhiMin = ref(null)
   const uhiMax = ref(null)
 
   async function fetchUhiRange() {
     try {
-      const ORION_URL = window.location.port === '5173' ? '/orion' : '/orion'
-      const entityId = 'urn:ngsi-ld:UHIHeatMap:XGBoost:brussels:2024'
-      const resp = await fetch(
-        `${ORION_URL}/ngsi-ld/v1/entities/${entityId}?local=true`,
-        { headers: { 'Accept': 'application/json' } }
-      )
-      if (!resp.ok) return
-      const entity = await resp.json()
+      const entity = await orionApi.getUhiEntity()
       const range = entity?.valueRange?.value
       if (range) {
         uhiMin.value = range.min
@@ -601,133 +688,55 @@
     }
   }
 
-  const VLINDER_URL = '/prediction'
-
   async function fetchTBase() {
     try {
-      const resp = await fetch(`${VLINDER_URL}/vlinder/t_base`)
-      if (!resp.ok) throw new Error(`HTTP ${resp.status}`)
-      const data = await resp.json()
+      const data = await predictionApi.getTBase()
       tBase.value = data.value
     } catch (err) {
       console.warn('VLINDER fetch failed:', err)
     }
   }
 
-  // TEMPERATURE PANEL STATE
+
+  // ── Temperature panel visibility ────────────────────────────────────────────
   const showTempPanel = ref(false)
-  const tempPanelPosition = ref({ x: window.innerWidth - 260, y: 100 })
-  const isDraggingTempPanel = ref(false)
-  let tempOffsetX = 0
-  let tempOffsetY = 0
 
-  const tempPanelStyle = computed(() => ({
-    left: tempPanelPosition.value.x + 'px',
-    top: tempPanelPosition.value.y + 'px'
-  }))
 
-  function startDragTempPanel(e) {
-    isDraggingTempPanel.value = true
-    tempOffsetX = e.clientX - tempPanelPosition.value.x
-    tempOffsetY = e.clientY - tempPanelPosition.value.y
-  }
+  // ── Toolbox: swipe, sun sim, mutual exclusion ───────────────────────────────
+  const showSunSimPanel  = ref(false)
+  const isSwipeDragging  = ref(false)
 
-  // TOOLBOX DRAG STATE
-  const toolboxPosition = ref({
-    x: window.innerWidth / 2 - 200,
-    y: 90
+  const sunSimTimeFormatted = computed(() => {
+    const hours = Math.floor(sunSimTime.value / 60)
+    const mins  = sunSimTime.value % 60
+    return `${String(hours).padStart(2, '0')}:${String(mins).padStart(2, '0')}`
   })
 
-  const isDraggingToolbox = ref(false)
-  let offsetX = 0
-  let offsetY = 0
+  // Sun simulation requires 3D
+  watch(sunSimEnabled, (enabled) => {
+    if (enabled && viewMode.value !== '3D') set3D()
+  })
 
-  const toolboxStyle = computed(() => ({
-    left: toolboxPosition.value.x + 'px',
-    top: toolboxPosition.value.y + 'px'
-  }))
-
-  function startDragToolbox(e) {
-    isDraggingToolbox.value = true
-    offsetX = e.clientX - toolboxPosition.value.x
-    offsetY = e.clientY - toolboxPosition.value.y
-  }
-
-  function onMouseMove(e) {
-    if (isDraggingToolbox.value) {
-      toolboxPosition.value.x = e.clientX - offsetX
-      toolboxPosition.value.y = e.clientY - offsetY
-    }
-    if (isDraggingTempPanel.value) {
-      tempPanelPosition.value.x = e.clientX - tempOffsetX
-      tempPanelPosition.value.y = e.clientY - tempOffsetY
-    }
-    if (isSwipeDragging.value) {
-      swipePosition.value = Math.max(0.05, Math.min(0.95, e.clientX / window.innerWidth))
-    }
-  }
-
-  function onClickOutside(e) {
-    const toolbox = document.querySelector('.toolbox-bar')
-    if (toolbox && !toolbox.contains(e.target)) {
-      showPredictMenu.value = false
+  /** Ensure only one toolbox tool is active at a time */
+  function deactivateToolsExcept(keepTool) {
+    if (keepTool !== 'swipe'  && swipeEnabled.value)   toggleSwipe()
+    if (keepTool !== 'sunSim' && sunSimEnabled.value) {
+      toggleSunSim()
       showSunSimPanel.value = false
     }
+    if (keepTool !== 'predict') showPredictMenu.value = false
   }
 
-  function stopDrag() {
-    isDraggingToolbox.value = false
-    isDraggingTempPanel.value = false
-    if (isSwipeDragging.value) {
-      isSwipeDragging.value = false
-      document.body.style.cursor = ''
-    }
-  }
-
-  // ========================================
-  // DRAWING STATE
-  // ========================================
-  const isDrawingActive = ref(false)
-
-  function onDrawingActive(active) {
-    isDrawingActive.value = active
-  }
-
-  // Auto-switch to 2D when drawing starts
-  watch(drawingMode, (mode) => {
-    if (mode && viewMode.value !== '2D') set2D()
-  })
-
-  // ========================================
-  // WORKFLOW LOCK (blocks 3D during steps 1-3)
-  // ========================================
-  const isWorkflowActive = computed(
-    () => isDrawingActive.value || showWorkflowBar.value
-  )
-
-  // ========================================
-  // SWIPE STATE (local UI)
-  // ========================================
-  const isSwipeDragging = ref(false)
-
-  // Predict menu click handler
   function handlePredictClick() {
     if (!showPredictMenu.value) deactivateToolsExcept('predict')
     togglePredictMenu()
   }
 
-  // Deactivate other toolbox tools for mutual exclusivity
-  function deactivateToolsExcept(keepTool) {
-    if (keepTool !== 'swipe' && swipeEnabled.value) {
-      toggleSwipe() // turns off swipe
-    }
-    if (keepTool !== 'sunSim' && sunSimEnabled.value) {
-      toggleSunSim()
-      showSunSimPanel.value = false
-    }
-    if (keepTool !== 'predict') {
-      showPredictMenu.value = false
-    }
+  function handleSunSimClick() {
+    const wasEnabled = sunSimEnabled.value
+    if (!wasEnabled) deactivateToolsExcept('sunSim')
+    toggleSunSim()
+    showSunSimPanel.value = !wasEnabled
   }
 
   function handleSwipeClick() {
@@ -736,10 +745,7 @@
     toggleSwipe()
     if (swipeEnabled.value) {
       if (!showLayers.value) showLayers.value = true
-      // Auto-expand layer sections so user can pick L/R layers
-      nextTick(() => {
-        layerControlsRef.value?.openLayerSections()
-      })
+      nextTick(() => layerControlsRef.value?.openLayerSections())
     }
   }
 
@@ -757,358 +763,51 @@
     e.preventDefault()
   }
 
-  // ========================================
-  // SUN SIMULATION (local UI)
-  // ========================================
-  const showSunSimPanel = ref(false)
 
-  function handleSunSimClick() {
-    const wasEnabled = sunSimEnabled.value
-    if (!wasEnabled) deactivateToolsExcept('sunSim')
-    toggleSunSim()
-    showSunSimPanel.value = !wasEnabled
-  }
-
-  const sunSimTimeFormatted = computed(() => {
-    const hours = Math.floor(sunSimTime.value / 60)
-    const mins = sunSimTime.value % 60
-    return `${String(hours).padStart(2, '0')}:${String(mins).padStart(2, '0')}`
-  })
-
-  // Auto-switch to 3D when sun sim is enabled
-  watch(sunSimEnabled, (enabled) => {
-    if (enabled && viewMode.value !== '3D') set3D()
-  })
-
-  // ========================================
-  // WORKFLOW STATE  (Step 1 → 2 → 3)
-  // ========================================
-  const activeGeometry = ref(null)       // geometry from drawing
-  const showSelectionOverlay = ref(false) // SVG overlay
-  const showWorkflowBar = ref(false)      // bottom bar guiding user
-  const showPredictionPanel = ref(false)  // Prediction panel
-  const workflowStep = ref(0)             // 0=none, 1=objects, 2=predict, 3=done
-  const showZoneObjectsPanel = ref(false) // Zone objects drag-and-drop panel
-  const showZoneInfoPanel = ref(false)    // Zone info/data panel (right side)
-  const zoneObjects = ref([])             // placed 3D objects
-  const predictionOverlay = ref(null)     // {image_base64, bounds} for Cesium overlay
-  const zoneInfoPanelRef = ref(null)      // ref to ZoneInfoPanel
-  const zoneStatsData = ref(null)         // zone stats from ZoneInfoPanel for comparison
-
-
-  function onGeometryDrawnPredict(geometry) {
-    addGeometry(geometry)
-    stopDrawing()
-    activeGeometry.value = geometry
-    showSelectionOverlay.value = true
-    showWorkflowBar.value = true
-    workflowStep.value = 1
-    // Auto-open side panels: objects (left) + info (right)
-    showZoneObjectsPanel.value = true
-    showZoneInfoPanel.value = true
-    showPredictionPanel.value = false
-    // Switch to 3D to visualize the zone
-    if (viewMode.value !== '3D') set3D()
-  }
-
-  // Navigate to a specific workflow step
-  function goToStep(step) {
-    if (step === 1) {
-      backToObjects()
-    } else if (step === 2) {
-      goToPredict()
-    }
-  }
-
-  // Go to predict step: open prediction panel, hide info panel
-  function goToPredict() {
-    workflowStep.value = 2
-    showPredictionPanel.value = true
-    showZoneInfoPanel.value = false
-  }
-
-  // Back from prediction to objects step
-  function backToObjects() {
-    workflowStep.value = 1
-    showPredictionPanel.value = false
-    showZoneInfoPanel.value = true
-  }
-
-  // Close prediction panel
-  function closePredictionPanel() {
-    showPredictionPanel.value = false
-    workflowStep.value = 1
-    showZoneInfoPanel.value = true
-  }
-
-  // Cancel entire workflow
-  function cancelWorkflow() {
-    showSelectionOverlay.value = false
-    showWorkflowBar.value = false
-    showPredictionPanel.value = false
-    showZoneObjectsPanel.value = false
-    showZoneInfoPanel.value = false
-    workflowStep.value = 0
-    activeGeometry.value = null
-    zoneObjects.value = []
-    predictionOverlay.value = null
-    zoneStatsData.value = null
-  }
-
-  function onZoneObjectsChanged(objects) {
-    zoneObjects.value = objects
-  }
-
-  // Called when prediction panel emits 'predict'
-  function onPredict(payload) {
-    if (payload.result) {
-      predictionOverlay.value = {
-        image_base64: payload.result.image_base64,
-        bounds: payload.result.bounds,
-        stats: payload.result.stats,
-      }
-      workflowStep.value = 3
-
-      // Save to ephemeral prediction history
-      predictionHistory.value.unshift({
-        id: Date.now(),
-        date: new Date().toLocaleString(),
-        stats: payload.result.stats,
-        objectCount: zoneObjects.value.length,
-      })
-    }
-  }
-
-  // ========================================
-  // PIXEL INFO (click on map)
-  // ========================================
-  const PREDICTION_URL = '/prediction'
-  const showPixelInfo = ref(false)
-  const pixelData = ref(null)
-  const pixelLoading = ref(false)
-  const pixelScreenX = ref(0)
-  const pixelScreenY = ref(0)
-
-  async function onPixelClick({ lon, lat, screenX, screenY }) {
-    // Don't show pixel info during workflows
-    if (isWorkflowActive.value || downloadMode.value) return
-
-    pixelScreenX.value = screenX
-    pixelScreenY.value = screenY
-    showPixelInfo.value = true
-    pixelLoading.value = true
-    pixelData.value = { lon, lat, values: {} }
-
-    try {
-      const resp = await fetch(`${PREDICTION_URL}/predict/pixel/value`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ lon, lat }),
-      })
-      if (!resp.ok) throw new Error(`${resp.status}`)
-      const data = await resp.json()
-      pixelData.value = data
-    } catch (err) {
-      console.error('Pixel value fetch failed:', err)
-      pixelData.value = { lon, lat, values: {} }
-    } finally {
-      pixelLoading.value = false
-    }
-  }
-
-  // ========================================
-  // TOOL MODAL (Metadata / Download) — per-layer
-  // ========================================
-  const showToolModal = ref(false)
-  const toolModalType = ref('download')
-  const toolModalLayerId = ref(null) // e.g. 'ndvi', 'uhi_prediction'
-  const downloadMode = ref(false)
-  const activeDownloadLayer = ref(null) // layer id for download
-
-  // Backend layer name mapping
-  const backendLayerMap = {
-    'uhi_prediction': 'uhi',
-  }
-  function toBackendLayer(frontendId) {
-    return backendLayerMap[frontendId] || frontendId
-  }
-
-  const toolModalLayerName = computed(() => {
-    if (!toolModalLayerId.value) return null
-    const layer = layers.find(l => l.id === toolModalLayerId.value)
-    return layer ? layer.name : toolModalLayerId.value
-  })
-
-  // ── LAYER INFO (stats) — 2-step: choose region → show results ──
-  const showLayerInfoChoice = ref(false)
-  const showLayerInfoResults = ref(false)
-  const layerInfoLoading = ref(false)
-  const layerInfoError = ref(null)
-  const layerInfoStats = ref(null)
-  const layerInfoName = ref(null)
-  const layerInfoLayerId = ref(null)
-  const layerInfoRegionLabel = ref('Full raster')
-  const infoMode = ref(false)  // true when drawing geometry for info
-
-  function onLayerMetadata(layerId) {
-    const layer = layers.find(l => l.id === layerId)
-    layerInfoName.value = layer ? layer.name : layerId
-    layerInfoLayerId.value = layerId
-    layerInfoStats.value = null
-    layerInfoError.value = null
-    showLayerInfoChoice.value = true
-  }
-
-  function onInfoChoice(choice) {
-    showLayerInfoChoice.value = false
-    if (choice === 'fullMap') {
-      layerInfoRegionLabel.value = 'Full raster'
-      fetchLayerStats(null)
-    } else if (choice === 'boundingBox') {
-      infoMode.value = true
-      startDrawingBoundingBox()
-    } else if (choice === 'polygon') {
-      infoMode.value = true
-      startDrawingPolygon()
-    }
-  }
-
-  async function fetchLayerStats(geometry) {
-    layerInfoLoading.value = true
-    layerInfoStats.value = null
-    layerInfoError.value = null
-    showLayerInfoResults.value = true
-    try {
-      const backendLayer = toBackendLayer(layerInfoLayerId.value)
-      const body = { layer: backendLayer }
-      if (geometry) body.geometry = geometry
-      const resp = await fetch(`${PREDICTION_URL}/predict/layer/stats`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(body),
-      })
-      if (!resp.ok) throw new Error(`Server error: ${resp.status}`)
-      layerInfoStats.value = await resp.json()
-    } catch (err) {
-      console.error('Layer stats fetch failed:', err)
-      layerInfoError.value = err.message || 'Failed to load layer statistics'
-    } finally {
-      layerInfoLoading.value = false
-    }
-  }
-
-  function closeLayerInfoResults() {
-    showLayerInfoResults.value = false
-  }
-
-  // ── DOWNLOAD MODAL ──
-  function onLayerDownload(layerId) {
-    toolModalType.value = 'download'
-    toolModalLayerId.value = layerId
-    showToolModal.value = true
-  }
-
-  function closeToolModal() {
-    showToolModal.value = false
-    toolModalLayerId.value = null
-  }
-
-  function onToolModalChoice(choice) {
-    const layerId = toolModalLayerId.value
-    closeToolModal()
-
-    activeDownloadLayer.value = layerId
-    if (choice === 'fullMap') {
-      pendingDownloadGeometry.value = null
-      const layerObj = layers.find(l => l.id === layerId)
-      const name = layerObj ? layerObj.name : layerId
-      downloadConfirmText.value = `Download the full ${name} layer as GeoTIFF?`
-      showDownloadConfirm.value = true
-    } else {
-      downloadMode.value = true
-      startDrawingBoundingBox()
-    }
-  }
-
-  // ========================================
-  // DOWNLOAD WITH VALIDATION
-  // ========================================
-  const showDownloadConfirm = ref(false)
-  const downloadConfirmText = ref('')
-  const pendingDownloadGeometry = ref(null)
-  const isDownloading = ref(false)
-
-  async function executeDownload() {
-    showDownloadConfirm.value = false
-    isDownloading.value = true
-    const geometry = pendingDownloadGeometry.value
-    const layerId = activeDownloadLayer.value || 'uhi'
-    const backendLayer = toBackendLayer(layerId)
-    const fileName = geometry ? `${backendLayer}_crop.tif` : `${backendLayer}_full.tif`
-
-    try {
-      const resp = await fetch(`${PREDICTION_URL}/predict/download`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ layer: backendLayer, geometry: geometry }),
-      })
-      if (!resp.ok) throw new Error(`Download failed: ${resp.status}`)
-      const blob = await resp.blob()
-      const url = URL.createObjectURL(blob)
-      const a = document.createElement('a')
-      a.href = url
-      a.download = fileName
-      a.click()
-      URL.revokeObjectURL(url)
-    } catch (err) {
-      console.error('Download failed:', err)
-    } finally {
-      isDownloading.value = false
-      pendingDownloadGeometry.value = null
-      activeDownloadLayer.value = null
-    }
-  }
-
-  // ========================================
-  // PREDICTION HISTORY (ephemeral, in-memory)
-  // ========================================
-  const predictionHistory = ref([])
-
-  // ========================================
-  // GEOMETRY DRAWN HANDLER (routes to correct mode)
-  // ========================================
+  // ── Geometry drawn router ────────────────────────────────────────────────────
+  // Directs the drawn geometry to the correct handler depending on which mode is active.
   function onGeometryDrawnRouter(geometry) {
     if (downloadMode.value) {
-      // Download mode: show confirm dialog with zone info
-      addGeometry(geometry)
-      stopDrawing()
-      downloadMode.value = false
-      pendingDownloadGeometry.value = geometry.geoJSON
-      const layerObj = layers.find(l => l.id === activeDownloadLayer.value)
-      const name = layerObj ? layerObj.name : (activeDownloadLayer.value || 'layer')
-      downloadConfirmText.value = `Download the selected ${name} zone as GeoTIFF?`
-      showDownloadConfirm.value = true
-      return
+      onDownloadGeometryDrawn(geometry)
+    } else if (infoMode.value) {
+      onInfoGeometryDrawn(geometry)
+    } else {
+      onGeometryDrawnPredict(geometry)
     }
-
-    if (infoMode.value) {
-      // Info mode: fetch stats for the drawn geometry
-      addGeometry(geometry)
-      stopDrawing()
-      infoMode.value = false
-      layerInfoRegionLabel.value = 'Selected zone'
-      fetchLayerStats(geometry.geoJSON)
-      return
-    }
-
-    // Normal predict workflow
-    onGeometryDrawnPredict(geometry)
   }
 
 
-  // ========================================
-  // LIFECYCLE
-  // ========================================
+  // ── Global mouse handlers (shared across multiple draggables + swipe) ───────
+  function onMouseMove(e) {
+    onToolboxMouseMove(e)
+    onTempPanelMouseMove(e)
+    if (isSwipeDragging.value) {
+      // Keep both panels visible: clamp handle between 5% and 95% of screen width
+      const SWIPE_MIN = 0.05
+      const SWIPE_MAX = 0.95
+      swipePosition.value = Math.max(SWIPE_MIN, Math.min(SWIPE_MAX, e.clientX / window.innerWidth))
+    }
+  }
+
+  function stopDrag() {
+    stopToolboxDrag()
+    stopTempPanelDrag()
+    if (isSwipeDragging.value) {
+      isSwipeDragging.value = false
+      document.body.style.cursor = ''
+    }
+  }
+
+  function onClickOutside(e) {
+    const toolbox = document.querySelector('.toolbox-bar')
+    if (toolbox && !toolbox.contains(e.target)) {
+      showPredictMenu.value = false
+      showSunSimPanel.value = false
+    }
+  }
+
+
+  // ── Lifecycle ───────────────────────────────────────────────────────────────
   onMounted(() => {
     window.addEventListener('mousemove', onMouseMove)
     window.addEventListener('mouseup', stopDrag)
