@@ -24,11 +24,11 @@ NGSI_LD_CONTEXT = "https://uri.etsi.org/ngsi-ld/v1/ngsi-ld-core-context.jsonld"
 class GeoSpatialLayer:
     """Represents a GeoSpatialLayer entity for NGSI-LD."""
     
-    layer_type: str  # RGB, NIR, NDVI, NDWI
+    layer_type: str  
     name: str
-    spectral_range: str  # RGB, NIR, computed
+    spectral_range: str 
     file_path: str
-    resolution: int = 40  # cm
+    resolution: int = 40 
     publish_to_geoserver: bool = True
     date_created: Optional[str] = None
     bounding_box: Optional[dict] = None
@@ -132,9 +132,6 @@ class OrionClient:
     def __init__(self, base_url: str):
         """
         Initialize Orion client.
-        
-        Args:
-            base_url: Base URL for Orion-LD (e.g., http://orion:1026)
         """
         self.base_url = base_url.rstrip("/")
         self.entities_url = f"{self.base_url}/ngsi-ld/v1/entities"
@@ -379,6 +376,3 @@ class OrionClient:
         except Exception as e:
             logger.error(f"Error creating subscription: {e}")
             return False
-
-
-

@@ -1,8 +1,7 @@
 """
 Orion-LD helpers.
 
-  - derive_layer_info     : extract from an NGSI-LD entity the info needed
-                            to publish a layer in GeoServer.
+  - derive_layer_info     : extract from an NGSI-LD entity the info needed to publish a layer in GeoServer.
   - sync_entity           : publish one entity to GeoServer (if applicable).
   - initial_sync          : sync all existing Orion entities on startup.
   - register_subscription : register (or recreate) the Orion-LD subscription.
@@ -23,6 +22,7 @@ from src.config import (
 from src.geoserver import GeoServerClient
 from src.styles import STYLES, STYLE_MAP
 
+# Logger for this module
 logger = logging.getLogger(__name__)
 
 # Orion-LD entity types that this service watches
@@ -37,11 +37,12 @@ def derive_layer_info(entity: dict) -> Optional[dict]:
     """Extract GeoServer publication info from an NGSI-LD entity.
 
     Returns None if the entity should not be published
-    (publishToGeoserver != true or filePath missing).
     """
+    # Only publish if publishToGeoserver is true
     if not entity.get("publishToGeoserver", {}).get("value", False):
         return None
 
+    # Only publish if filePath is set
     file_path = entity.get("filePath", {}).get("value")
     if not file_path:
         logger.warning(

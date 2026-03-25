@@ -3,148 +3,102 @@ NDWI (Normalized Difference Water Index) Processor
 
 NDWI = (Green - NIR) / (Green + NIR)
 
-Values range from -1 to 1:
-- High values (0.2 to 1.0): Water bodies
-- Low/negative values: Non-water features (vegetation, soil, built-up)
+Interpretation:
+  [ 0.2,  1.0] : Open water (rivers, lakes, ponds)
+  [-0.1,  0.2] : Flooded or saturated surfaces
+  [-1.0, -0.1] : Vegetation, soil, built-up areas (non-water)
 
 Output is a Cloud-Optimized GeoTIFF (COG) with:
-- uint8 dtype: values scaled from [-1, 1] to [0, 254], 255 = nodata
-- DEFLATE compression with horizontal predictor
-- 512x512 internal tiles
-- Internal overviews (pyramids) at 2x, 4x, 8x, 16x, 32x
+  - uint8 encoding: [-1, 1] → [0, 254], 255 = nodata
+  - DEFLATE compression, 512×512 internal tiles
+  - Multi-level overviews (2×, 4×, 8×, 16×, 32×)
 
-Uses windowed processing for large files to avoid memory issues.
+Uses tiled (windowed) processing to handle files larger than available RAM.
+To decode: ndwi = (pixel / 254) * 2 - 1
 """
 
 import logging
+
 import numpy as np
 import rasterio
 from rasterio.enums import Resampling
-from rasterio.windows import Window
 
-from processors.cog import build_overviews, create_cog_profile, COG_BLOCKSIZE
+from processors.cog import build_overviews, create_cog_profile
+from processors.utils import detect_nodata_mask, iter_windows, normalized_difference
 
 logger = logging.getLogger(__name__)
 
-# Process in tiles of this size (adjust based on available memory)
 TILE_SIZE = 2048
-def _detect_nodata_mask(
-    src: rasterio.DatasetReader,
-    window: Window,
-    nodata_values: tuple[int, ...] = (254, 255),
-) -> np.ndarray:
-   
-    bands = src.read(window=window)   # shape (3, h, w)
+NODATA_VALUE = 255
 
-    nodata_mask = np.ones(bands.shape[1:], dtype=bool)  # (h, w), True
-    for band in bands:
-        band_is_nodata = np.isin(band, nodata_values)
-        nodata_mask &= band_is_nodata
 
-    return nodata_mask
 def calculate_ndwi(
     rgb_path: str,
     nir_path: str,
     output_path: str,
-    green_band_index: int = 2,  # Green is band 2 in RGB (1-indexed)
+    green_band_index: int = 2,
     tile_size: int = TILE_SIZE,
-    nodata_values: tuple[int, ...] = (254, 255)
+    nodata_values: tuple = (254, 255),
 ) -> str:
     """
-    Calculate NDWI from RGB and NIR orthophotos using windowed processing.
-    Output is a COG-optimized uint8 GeoTIFF for fast WMS serving.
-    
-    Args:
-        rgb_path: Path to RGB GeoTIFF file
-        nir_path: Path to NIR GeoTIFF file  
-        output_path: Path for output NDWI GeoTIFF
-        green_band_index: Index of green band in RGB file (1-indexed, default 2 for G)
-        tile_size: Size of processing tiles (default 2048)
-    
-    Returns:
-        Path to the created NDWI GeoTIFF
-    
-    Encoding:
-        NDWI [-1, 1] -> uint8 [0, 254], 255 = nodata
-        To decode: ndwi = (pixel_value / 254) * 2 - 1
-    """
-    logger.info(f"Calculating NDWI from RGB: {rgb_path} and NIR: {nir_path}")
-    logger.info(f"Output: uint8 COG with overviews, tile size: {tile_size}")
-    
-    with rasterio.open(rgb_path) as rgb_src:
-        with rasterio.open(nir_path) as nir_src:
-            # Use the smaller dimensions
-            height = min(rgb_src.height, nir_src.height)
-            width = min(rgb_src.width, nir_src.width)
-            
-            logger.info(f"Output dimensions: {width} x {height}")
-            
-            # Create COG-optimized output profile (uint8)
-            profile = rgb_src.profile.copy()
-            profile.update(
-                height=height,
-                width=width,
-            )
-            profile = create_cog_profile(profile, dtype="uint8")
-            
-            with rasterio.open(output_path, 'w', **profile) as dst:
-                # Process in tiles
-                total_tiles = ((height + tile_size - 1) // tile_size) * ((width + tile_size - 1) // tile_size)
-                tile_count = 0
-                
-                for row_off in range(0, height, tile_size):
-                    for col_off in range(0, width, tile_size):
-                        # Calculate actual tile size (may be smaller at edges)
-                        win_height = min(tile_size, height - row_off)
-                        win_width = min(tile_size, width - col_off)
-                        
-                        window = Window(col_off, row_off, win_width, win_height)
-                        
-                        rgb_nodata = _detect_nodata_mask(rgb_src, window, nodata_values)
-                        nir_nodata = _detect_nodata_mask(nir_src, window, nodata_values)
-                        nodata_mask = rgb_nodata | nir_nodata
+    Calculate NDWI from RGB and NIR orthophotos using tiled processing.
 
-                        # Read tiles
-                        green = rgb_src.read(green_band_index, window=window).astype(np.float32)
-                        nir = nir_src.read(1, window=window).astype(np.float32)
-                        
-                        # Calculate NDWI
-                        denominator = green + nir
-                        ndwi = np.where(
-                            denominator != 0,
-                            (green - nir) / denominator,
-                            0
-                        )
-                        ndwi = np.clip(ndwi, -1.0, 1.0)
-                        
-                        # Scale to uint8: [-1, 1] -> [0, 254], 255 = nodata
-                        ndwi_uint8 = ((ndwi + 1) / 2 * 254).astype(np.uint8)
-                        
-                        # Set nodata pixels to 255
-                        ndwi_uint8[nodata_mask] = 255
-                        
-                        # Write tile
-                        dst.write(ndwi_uint8, 1, window=window)
-                        
-                        tile_count += 1
-                        if tile_count % 100 == 0:
-                            logger.info(f"NDWI progress: {tile_count}/{total_tiles} tiles")
-                
-                # Add metadata
-                dst.update_tags(
-                    LAYER_TYPE="NDWI",
-                    FORMULA="(Green - NIR) / (Green + NIR)",
-                    SOURCE_RGB=rgb_path,
-                    SOURCE_NIR=nir_path,
-                    VALUE_RANGE="-1 to 1",
-                    ENCODING="uint8: [0,254] maps to [-1,1], 255=nodata",
-                    DECODE_FORMULA="ndwi = (pixel / 254) * 2 - 1"
+    Args:
+        rgb_path:         Path to RGB GeoTIFF
+        nir_path:         Path to NIR GeoTIFF
+        output_path:      Path for the NDWI output GeoTIFF
+        green_band_index: Green band index in the RGB file (1-indexed, default 2)
+        tile_size:        Processing tile size in pixels (default 2048)
+        nodata_values:    Pixel values treated as nodata in source images
+
+    Returns:
+        output_path
+    """
+    logger.info(f"Calculating NDWI: {rgb_path} + {nir_path} -> {output_path}")
+
+    with rasterio.open(rgb_path) as rgb_src, rasterio.open(nir_path) as nir_src:
+        height = min(rgb_src.height, nir_src.height)
+        width = min(rgb_src.width, nir_src.width)
+        logger.info(f"Output dimensions: {width} x {height}")
+
+        profile = create_cog_profile(rgb_src.profile.copy(), dtype="uint8")
+        profile.update(height=height, width=width)
+
+        windows = list(iter_windows(height, width, tile_size))
+
+        with rasterio.open(output_path, "w", **profile) as dst:
+            for i, window in enumerate(windows):
+                # A pixel is nodata if either the RGB or NIR source has nodata there
+                nodata_mask = (
+                    detect_nodata_mask(rgb_src, window, nodata_values)
+                    | detect_nodata_mask(nir_src, window, nodata_values)
                 )
-    
-    # Build overviews for fast multi-zoom WMS serving
+
+                green = rgb_src.read(green_band_index, window=window).astype(np.float32)
+                nir = nir_src.read(1, window=window).astype(np.float32)
+
+                # NDWI = (Green - NIR) / (Green + NIR), clipped to [-1, 1]
+                ndwi = normalized_difference(green, nir)
+
+                # Encode [-1, 1] → [0, 254]; mark nodata pixels as 255
+                ndwi_uint8 = ((ndwi + 1) / 2 * 254).astype(np.uint8)
+                ndwi_uint8[nodata_mask] = NODATA_VALUE
+
+                dst.write(ndwi_uint8, 1, window=window)
+
+                if (i + 1) % 100 == 0:
+                    logger.info(f"NDWI progress: {i + 1}/{len(windows)} tiles")
+
+            dst.update_tags(
+                LAYER_TYPE="NDWI",
+                FORMULA="(Green - NIR) / (Green + NIR)",
+                VALUE_RANGE="-1 to 1",
+                ENCODING="uint8 [0,254] = [-1,1], 255 = nodata",
+                DECODE_FORMULA="ndwi = (pixel / 254) * 2 - 1",
+            )
+
     build_overviews(output_path, resampling=Resampling.average)
-    
-    logger.info(f"NDWI COG saved to: {output_path}")
+    logger.info(f"NDWI saved: {output_path}")
     return output_path
 
 
