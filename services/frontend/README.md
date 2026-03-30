@@ -71,28 +71,6 @@ flowchart TB
 | Imperviousness | `uhi:imperviousness` | Soil sealing (0-100%) |
 | UHI Prediction | `uhi:uhi_prediction` | Heat risk (0 = cool, 1 = hot) |
 
-## Architecture
-
-```mermaid
-flowchart LR
-    subgraph "Browser"
-        VUE["Vue 3 SPA"]
-    end
-
-    subgraph "Nginx :80"
-        STATIC["/ -> Static files"]
-        GS_PROXY["/geoserver/* -> GeoServer :8080"]
-        PRED_PROXY["/prediction/* -> Prediction :8000"]
-        ORION_PROXY["/orion/* -> Orion-LD :1026"]
-    end
-
-    VUE --> STATIC
-    VUE --> GS_PROXY
-    VUE --> PRED_PROXY
-    VUE --> ORION_PROXY
-```
-
-The Nginx reverse proxy routes all backend requests through the same origin, avoiding CORS issues entirely.
 
 ## Development
 

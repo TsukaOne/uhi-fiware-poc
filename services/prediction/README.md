@@ -1,6 +1,6 @@
 # Prediction Service
 
-FastAPI microservice that generates **Urban Heat Island (UHI) heat-risk predictions** using an XGBoost machine-learning model trained on 10+ geospatial raster layers. It also ingests real-time sensor data from multiple providers (VLINDER, Sensors.community) and exposes interactive zone prediction for user-drawn polygons.
+FastAPI microservice that generates **Urban Heat Island (UHI) heat-risk predictions** using an XGBoost machine-learning model trained on geospatial raster layers. It also ingests real-time sensor data from multiple providers (VLINDER, Sensors.community) and exposes interactive zone prediction for user-drawn polygons.
 
 All input file paths are resolved from Orion-LD at runtime -- no paths are hardcoded.
 
@@ -17,9 +17,9 @@ flowchart TB
     end
 
     subgraph "Training Pipeline"
-        SAMPLE["Sample pixels across<br/>all 10 raster layers"]
+        SAMPLE["Sample pixels across<br/>all raster layers"]
         DIST["Compute distance features<br/>(to water, to parks)"]
-        FEAT["Build 12-feature matrix"]
+        FEAT["Build feature matrix"]
         XGB_TRAIN["Train XGBoost<br/>regressor"]
         MODEL["Save model artifact<br/>/data/models/"]
     end
@@ -99,14 +99,10 @@ flowchart TB
 | Zone prediction | 2-30 sec | Depends on polygon size |
 | Sensor sync | 5-15 sec | Fetches from 2 API providers |
 
-Monitor logs:
-```bash
-docker logs uhi-prediction --tail 50 -f
-```
 
 ## XGBoost Model
 
-### Input Features (12 total)
+### Input Features (10 total)
 
 | # | Feature | Source |
 |---|---|---|
@@ -115,13 +111,11 @@ docker logs uhi-prediction --tail 50 -f
 | 3 | NDBI | **QGIS preprocessed** (`ndbi.tif`) |
 | 4 | DTM | Downloaded by ingestion service |
 | 5 | DSM | **QGIS preprocessed** (`dsm.tif`) |
-| 6 | LST | Computed by ingestion service |
-| 7 | Building Height | Computed by ingestion service |
-| 8 | Albedo | **QGIS preprocessed** (`albedo.tif`) |
-| 9 | Imperviousness | **QGIS preprocessed** (`imperviousness.tif`) |
-| 10 | RGB | Downloaded by ingestion service |
-| 11 | Distance to Water | Computed from NDWI via EDT |
-| 12 | Distance to Park | Computed from NDVI via EDT |
+| 6 | Building Height | Computed by ingestion service |
+| 7 | Albedo | **QGIS preprocessed** (`albedo.tif`) |
+| 8 | Imperviousness | **QGIS preprocessed** (`imperviousness.tif`) |
+| 9 | Distance to Water | Computed from NDWI via EDT |
+| 10 | Distance to Park | Computed from NDVI via EDT |
 
 ### Training
 
@@ -157,7 +151,7 @@ flowchart LR
 
     subgraph "Processing"
         WIN["Convert polygon<br/>to pixel window + mask"]
-        READ["Read 9 layers<br/>(parallel I/O)"]
+        READ["Read layers<br/>(parallel I/O)"]
         IMPACT["Apply object impacts<br/>(modify feature values)"]
         DIST2["Compute distance<br/>features"]
         INF["XGBoost inference<br/>on valid pixels"]
@@ -172,45 +166,6 @@ flowchart LR
     OBJ --> IMPACT
     IMPACT --> DIST2 --> INF --> RGBA & STATS
 ```
-
-**Object impact examples:**
-
-| Object | NDVI Impact | Imperviousness Impact | Other |
-|---|---|---|---|
-| Deciduous tree | +0.6 | -0.5 | Albedo +0.1 |
-| Residential building | -0.3 | +0.8 | Building height +10m |
-| Water fountain | -- | -- | NDWI +0.5 |
-| Solar panel | -- | +0.3 | Albedo -0.2 |
-
-## Multi-Provider Sensor Ingestion
-
-```mermaid
-flowchart LR
-    subgraph "External APIs"
-        VL["VLINDER / Mooncake API<br/>(6 stations in Brussels)"]
-        SC["Sensors.community API<br/>(area-based query)"]
-    end
-
-    subgraph "Prediction Service"
-        VP["VlinderProvider"]
-        SCP["SensorsCommunityProvider"]
-        ORCH["OrionSync orchestrator<br/>(periodic: every 10 min)"]
-    end
-
-    subgraph "Orion-LD"
-        TE["TemperatureSensor<br/>entities"]
-    end
-
-    subgraph "Frontend"
-        MARKERS["Sensor markers<br/>on CesiumJS globe"]
-    end
-
-    VL --> VP --> ORCH
-    SC --> SCP --> ORCH
-    ORCH --> TE --> MARKERS
-```
-
-Each sensor reading is normalized to a `SensorReading` object with: temperature, humidity, pressure, wind speed/direction/gust, rain intensity, GPS coordinates, and timestamps.
 
 ## Environment Variables
 
@@ -250,7 +205,6 @@ Each sensor reading is normalized to a `SensorReading` object with: temperature,
 | Compression | DEFLATE |
 | Tile size | 512x512 |
 | Overviews | 2x, 4x, 8x, 16x, 32x |
-| Value range | `[0, 1]` -- 0 = cool, 1 = hot |
 
 Decode formula: `heat_risk = pixel / 254`
 

@@ -67,7 +67,7 @@ flowchart LR
     OV1 --> NDWI_C --> COG
     OV1 --> LST_C --> COG
     OV1 --> BH --> COG
-    QGIS -- "copy to<br/>data/processed/" --> COG
+    QGIS -- "copy to<br/>data/raw/" --> COG
 
     COG --> E_LAYERS
 
@@ -132,21 +132,23 @@ graph TB
 
 ### XGBoost Prediction Pipeline
 
-The ML model combines 10 raster features + 2 computed distance features to predict heat-risk intensity:
+The ML model combines 8 raster features + 2 computed distance features to predict heat-risk intensity:
 
 ```mermaid
 flowchart TB
-    subgraph "Input Rasters (10 layers)"
+    subgraph "Input Rasters (8 layers)"
         NDVI[NDVI]
         NDWI[NDWI]
         NDBI[NDBI]
         DTM[DTM]
         DSM[DSM]
-        LST[LST]
         BH[Building Height]
         ALB[Albedo]
         IMP[Imperviousness]
-        RGB2[RGB]
+    end
+
+    subgraph "Input Rasters for Loss function"
+        LST[LST]
     end
 
     subgraph "Distance Features"
@@ -155,18 +157,21 @@ flowchart TB
     end
 
     subgraph "XGBoost Model"
-        FM["Feature Matrix<br/>12 features per pixel"]
+        FM["Feature Matrix<br/>10 features per pixel"]
         XGB["XGBoost Predict<br/>tiled inference"]
+        OM["Objective Matrix<br/>Difference between LST_pixel and LST_ref"]
     end
 
     subgraph "Output"
-        UHI["UHI Heat-Risk<br/>0 = cool ... 1 = hot"]
+        UHI["UHI Heat-Risk Map"]
         PNG["RGBA PNG overlay<br/>(zone prediction)"]
         COG2["Cloud-Optimized GeoTIFF<br/>(full-extent prediction)"]
     end
 
-    NDVI & NDWI & NDBI & DTM & DSM & LST & BH & ALB & IMP & RGB2 --> FM
+    NDVI & NDWI & NDBI & DTM & DSM & BH & ALB & IMP --> FM
     DW & DP --> FM
+    LST --> OM
+    OM --> XGB
     FM --> XGB
     XGB --> UHI
     UHI --> PNG
@@ -179,57 +184,27 @@ flowchart TB
 
 ```
 uhi-fiware-poc/
-├── docker-compose.yml              # Orchestrates all 7 services
-├── env.example                     # Template for environment variables
-├── .env                            # Active config (git-ignored, copy from env.example)
+├── docker-compose.yml          # Orchestrates all 7 services
+├── env.example                 # Template for environment variables
+├── .env                        # Active config (git-ignored, copy from env.example)
 │
 ├── services/
-│   ├── ingestion/                  # Downloads orthophotos, computes indices
-│   │   ├── main.py                 # FastAPI app
-│   │   ├── config.py               # Environment variable config
-│   │   ├── api/                    # HTTP endpoints
-│   │   ├── fiware/client.py        # Orion-LD NGSI-LD client
-│   │   ├── pipeline/               # Download & orchestration logic
-│   │   ├── processors/             # NDVI, NDWI, LST, DTM, COG utilities
-│   │   ├── Dockerfile
-│   │   └── README.md
-│   │
-│   ├── prediction/                 # UHI prediction engine + sensor ingestion
-│   │   ├── main.py                 # FastAPI app + service wiring
-│   │   ├── algorithm/
-│   │   │   ├── config.py           # Pydantic Settings (all env vars)
-│   │   │   ├── api/                # Routers (prediction, training, zone, sensor)
-│   │   │   ├── application/        # Orchestrators (prediction, training, zone)
-│   │   │   ├── domain/             # Business logic (raster engine, layer decoder)
-│   │   │   └── infrastructure/     # Orion client, layer resolver, sensor providers
-│   │   ├── Dockerfile
-│   │   └── README.md
-│   │
-│   ├── geoserver-sync/             # Auto-publishes layers to GeoServer
-│   │   ├── main.py                 # FastAPI app
-│   │   ├── src/                    # Config, Orion handler, GeoServer client, styles
-│   │   ├── Dockerfile
-│   │   └── README.md
-│   │
-│   └── frontend/                   # 3D web viewer
-│       ├── src/
-│       │   ├── App.vue             # Root component
-│       │   ├── components/         # CesiumViewer, LayerControls, PredictionPanel, ...
-│       │   ├── composables/        # Reusable logic (camera, drawing, sensors, WMS, ...)
-│       │   └── services/           # API clients (Orion, Prediction)
-│       ├── nginx.conf              # Reverse proxy (GeoServer, Orion, Prediction)
-│       ├── Dockerfile
-│       └── README.md
+│   ├── ingestion/              # Downloads orthophotos, computes NDVI/NDWI/LST/BuildingHeight
+│   ├── prediction/             # XGBoost UHI prediction + sensor ingestion (VLINDER, Sensors.community)
+│   ├── geoserver-sync/         # Auto-publishes Orion entities to GeoServer as WMS layers
+│   └── frontend/               # Vue 3 + CesiumJS 3D web viewer
 │
-├── data/                           # Mounted volumes (git-ignored)
-│   ├── raw/                        # Downloaded orthophotos + source data
-│   ├── processed/                  # NDVI, NDWI, LST, UHI, + QGIS preprocessed files
-│   ├── models/                     # Trained XGBoost model artifacts
-│   └── cache/                      # Intermediate processing cache
+├── data/                       # Mounted volumes (git-ignored)
+│   ├── raw/                    # Downloaded orthophotos + QGIS preprocessed files
+│   ├── processed/              # COG outputs (NDVI, NDWI, LST, UHI, albedo, dsm, ...)
+│   ├── models/                 # Trained XGBoost model artifacts
+│   └── cache/                  # Intermediate processing cache
 │
 └── config/
-    └── geoserver/                  # GeoServer workspace config (runtime, git-ignored)
+    └── geoserver/              # GeoServer workspace config (runtime, git-ignored)
 ```
+
+> Each service has its own detailed `README.md` with full file listings, API reference, and configuration.
 
 ---
 
@@ -261,13 +236,13 @@ The default `.env` points to the Brussels 2024 UrbIS orthophotos. Edit if needed
 
 ### Step 3 — Place QGIS preprocessed raster files
 
-> **Important:** Four raster layers must be preprocessed externally with QGIS and placed manually in `data/processed/` **before** running the prediction. These files are provided separately.
+> **Important:** Four raster layers must be preprocessed externally with QGIS and placed manually in `data/raw/` **before** running the prediction. These files are provided separately.
 
 ```bash
-mkdir -p data/processed
+mkdir -p data/raw
 ```
 
-Copy the following files into `data/processed/`:
+Copy the following files into `data/raw/`:
 
 | File | Description | Source |
 |---|---|---|
@@ -306,7 +281,7 @@ docker compose ps
 
 ```bash
 curl -X POST http://localhost:8001/ingest/orthophotos \
-  -H "Content-Type: application/json" -d '{}'
+  -H "Content-Type: application/json" -d "{}"
 ```
 
 Monitor progress:
@@ -321,11 +296,6 @@ curl http://localhost:8001/status
 > - **Overview building:** 5–15 minutes per file
 > - **NDVI/NDWI/LST computation:** 10–30 minutes each (windowed processing on 4–6 GB files)
 > - **Total:** 1–3 hours on first run
->
-> Monitor logs for real-time progress:
-> ```bash
-> docker logs uhi-ingestion --tail 50 -f
-> ```
 
 The pipeline will:
 1. Download RGB and NIR orthophotos, DTM, and Buildings data (~10 GB total)
@@ -352,11 +322,7 @@ curl http://localhost:8002/training/status
 ```
 
 > **Warning: Training can take 15–45 minutes** depending on your hardware (GPU recommended).
-> The model samples pixels across all 10+ input layers, builds a feature matrix, and trains an XGBoost regressor. Monitor logs:
-> ```bash
-> docker logs uhi-prediction --tail 50 -f
-> ```
-
+> The model samples pixels across all 10+ input layers, builds a feature matrix, and trains an XGBoost regressor.
 ### Step 7 — Generate the full UHI prediction
 
 Once the model is trained, trigger a full-extent prediction:
@@ -396,14 +362,14 @@ sequenceDiagram
     participant GS as GeoServer :8080
     participant FE as Frontend :3000
 
-    Note over U: 1. Place QGIS files in data/processed/
+    Note over U: 1. Place QGIS files in data/raw/
     Note over U: albedo.tif, dsm.tif, imperviousness.tif, ndbi.tif
 
     U->>ING: POST /ingest/orthophotos
     activate ING
     Note over ING: Download RGB + NIR + DTM + Buildings<br/>(15-60 min)
     Note over ING: Compute NDVI, NDWI, LST<br/>(10-30 min each)
-    ING->>ORION: Create GeoSpatialLayer entities (x12)
+    ING->>ORION: Create GeoSpatialLayer entities (x11)
     deactivate ING
 
     ORION-->>SYNC: Subscription notification
@@ -518,94 +484,6 @@ Represents a real-time sensor observation:
 | `POST` | `/sync` | Orion notification handler |
 | `POST` | `/sync/all` | Force full re-sync |
 | `GET` | `/health` | Health check |
-
----
-
-## Useful Commands
-
-```bash
-# --- Service Management ---
-
-# Check all containers status
-docker compose ps
-
-# View service logs (follow mode)
-docker logs uhi-ingestion --tail 50 -f
-docker logs uhi-prediction --tail 50 -f
-docker logs uhi-geoserver-sync --tail 50 -f
-
-# Restart a specific service
-docker compose restart prediction
-
-# --- Orion-LD Inspection ---
-
-# List all entities
-curl -s "http://localhost:1026/ngsi-ld/v1/entities?local=true" \
-  -H "Accept: application/json" | python3 -m json.tool
-
-# List subscriptions
-curl -s "http://localhost:1026/ngsi-ld/v1/subscriptions" \
-  -H "Accept: application/json" | python3 -m json.tool
-
-# --- GeoServer ---
-
-# List published layers
-curl -s -u admin:geoserver \
-  "http://localhost:8080/geoserver/rest/workspaces/uhi/coverages.json" | python3 -m json.tool
-
-# Force re-publish all layers
-docker exec uhi-geoserver-sync curl -s -X POST http://localhost:8000/sync/all
-
-# --- Prediction & Sensors ---
-
-# Manually trigger prediction
-curl -X POST http://localhost:8002/predict/manual
-
-# Train model
-curl -X POST http://localhost:8002/training/start
-
-# Check training status
-curl http://localhost:8002/training/status
-
-# List live sensor readings
-curl http://localhost:8002/sensors
-
-# --- Clean Restart ---
-
-# Full reset (removes all data)
-docker compose down -v
-rm -rf data/raw data/processed data/models data/cache config/geoserver
-docker compose up -d
-# Remember to re-place the QGIS files in data/processed/ after reset!
-```
-
----
-
-## Key Design Decisions
-
-### Event-driven via Orion subscriptions
-
-No service calls another directly. Services register entities and subscribe to changes in Orion-LD. This decouples the system and makes it extensible — adding a new layer type or a new consumer requires no changes to existing services.
-
-### No hardcoded file paths
-
-The prediction service knows only entity IDs (configurable via environment variables). At runtime it queries Orion for `filePath` properties. If entities don't exist, the prediction fails explicitly rather than silently using stale data.
-
-### Cloud-Optimized GeoTIFFs (COG)
-
-All output rasters are saved as uint8 COGs with DEFLATE compression, 512x512 internal tiles, and multi-level overviews. This gives 10-100x faster WMS serving compared to raw float32 GeoTIFFs.
-
-### Windowed processing
-
-Large rasters (4-6 GB) are processed in 2048x2048 tiles to keep peak memory usage under control, avoiding OOM crashes.
-
-### Multi-provider sensor ingestion
-
-The sensor pipeline is designed with an abstract `BaseSensorProvider` interface. Adding a new sensor network (e.g., IRM, OpenWeather) requires only implementing a single class with a `fetch_readings()` method.
-
-### Automatic GeoServer sync
-
-Any entity with `publishToGeoserver: true` is automatically published to GeoServer. No manual layer creation needed.
 
 ---
 

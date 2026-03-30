@@ -73,18 +73,6 @@ docker exec uhi-geoserver-sync curl -s -X POST http://localhost:8000/sync/all
 | `PATH_MAP_PROCESSED` | `/data/processed:/opt/geoserver_data/data/uhi_processed` | Container path to GeoServer path |
 | `PATH_MAP_RAW` | `/data/raw:/opt/geoserver_data/data/uhi_raw` | Container path to GeoServer path |
 
-## Path Mapping
-
-Files written by the ingestion/prediction services live at paths like `/data/processed/ndvi.tif`. GeoServer sees the same host directories mounted at different internal paths.
-
-The `PATH_MAP_*` environment variables translate between these two path namespaces:
-
-```
-Container path:   /data/processed/ndvi_brussels_2024.tif
-                            |  (PATH_MAP_PROCESSED)
-GeoServer path:   /opt/geoserver_data/data/uhi_processed/ndvi_brussels_2024.tif
-```
-
 ## Orion Subscription
 
 The service subscribes to changes on:

@@ -1,42 +1,53 @@
 # Ingestion Service
 
-FastAPI microservice that downloads orthophotos from [UrbIS](https://datastore.brussels), computes spectral indices (NDVI, NDWI, LST), extracts building heights, and registers all layers as NGSI-LD entities in Orion-LD.
+FastAPI microservice that downloads orthophotos from [UrbIS](https://datastore.brussels), computes spectral indices (NDVI, NDWI, LST), extracts building heights, converts QGIS-preprocessed rasters to COG format, and registers all layers as NGSI-LD entities in Orion-LD.
 
 ## How It Works
 
 ```mermaid
 flowchart TB
-    subgraph "Data Sources"
+    subgraph "data/raw/ — Downloaded"
         RGB_ZIP["RGB Orthophoto ZIP<br/>~3 GB download"]
         NIR_ZIP["NIR Orthophoto ZIP<br/>~2 GB download"]
         DTM_ZIP["DTM Source ZIP"]
         BLDG_ZIP["Buildings Data ZIP"]
     end
 
+    subgraph "data/raw/ — QGIS Preprocessed"
+        QGIS["albedo.tif<br/>dsm.tif<br/>imperviousness.tif<br/>ndbi.tif<br/>(placed manually)"]
+    end
+
     subgraph "Download & Extract"
         DL["HTTP Download<br/>(skips if already present)"]
-        EX["Extract ZIPs<br/>to /data/raw/"]
+        EX["Extract ZIPs to /data/raw/"]
     end
 
     subgraph "Overview Building"
-        OV["Add multi-level overviews<br/>(2x, 4x, 8x, 16x, 32x)<br/>for fast WMS serving"]
+        OV["Add multi-level overviews<br/>(2x, 4x, 8x, 16x, 32x)"]
     end
 
-    subgraph "Index Computation (windowed 2048x2048)"
+    subgraph "Computed Indices (windowed 2048x2048)"
         NDVI["NDVI<br/>(NIR - Red) / (NIR + Red)"]
         NDWI["NDWI<br/>(Green - NIR) / (Green + NIR)"]
         LST["LST<br/>Land Surface Temperature"]
         BH["Building Height<br/>DSM - DTM"]
     end
 
-    subgraph "Output"
-        COG["Cloud-Optimized GeoTIFF<br/>uint8 + DEFLATE + overviews"]
+    subgraph "COG Conversion"
+        COG_COMP["Computed layers → COG<br/>uint8 + DEFLATE + overviews"]
+        COG_QGIS["QGIS layers → COG<br/>uint8 + DEFLATE + overviews"]
+    end
+
+    subgraph "data/processed/ — Output"
+        OUT["ndvi.tif, ndwi.tif, lst.tif,<br/>building_height.tif, albedo.tif,<br/>dsm.tif, imperviousness.tif, ndbi.tif"]
         REG["Register in Orion-LD<br/>GeoSpatialLayer entities"]
     end
 
     RGB_ZIP & NIR_ZIP & DTM_ZIP & BLDG_ZIP --> DL --> EX --> OV
     OV --> NDVI & NDWI & LST & BH
-    NDVI & NDWI & LST & BH --> COG --> REG
+    NDVI & NDWI & LST & BH --> COG_COMP
+    QGIS --> COG_QGIS
+    COG_COMP & COG_QGIS --> OUT --> REG
 ```
 
 ## Responsibilities
@@ -47,7 +58,8 @@ flowchart TB
 4. **Compute NDWI** -- Normalized Difference Water Index
 5. **Compute LST** -- Land Surface Temperature
 6. **Extract Building Height** from DSM and DTM
-7. **Register entities** in Orion-LD (`GeoSpatialLayer` entities for each layer)
+7. **Convert QGIS files to COG** -- albedo, DSM, imperviousness, NDBI from `data/raw/` → `data/processed/`
+8. **Register entities** in Orion-LD (`GeoSpatialLayer` entities for each layer)
 
 All outputs are Cloud-Optimized GeoTIFFs (uint8, DEFLATE compressed, internally tiled, with overviews).
 
