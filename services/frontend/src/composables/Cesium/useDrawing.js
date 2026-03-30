@@ -181,7 +181,9 @@ export function useDrawing({ getViewer, emit }) {
 
   /**
    * Update the live-preview entity that follows the cursor.
-   * Shows a partial polygon outline or bounding box as the user draws.
+   * The entity is created once and its properties are updated in-place.
+   * It is only destroyed and recreated when the required entity type changes
+   * (e.g. polyline → polygon after placing the 2nd point in polygon mode).
    */
   function _updatePreview(viewer, mousePos) {
     if (!drawingMode || drawnPoints.length < 1) return
@@ -194,37 +196,52 @@ export function useDrawing({ getViewer, emit }) {
 
     if (!mouseCartesian) return
 
-    if (previewEntity) {
+    // Determine required entity type for current drawing state
+    let neededType
+    if (drawingMode === 'polygon' && drawnPoints.length >= 2) neededType = 'polygon'
+    else if (drawingMode === 'polygon' && drawnPoints.length === 1) neededType = 'polyline'
+    else if (drawingMode === 'boundingBox') neededType = 'bbox'
+    else return
+
+    // Destroy only when the entity type needs to change (rare)
+    if (previewEntity && previewEntity._previewType !== neededType) {
       viewer.entities.remove(previewEntity)
       previewEntity = null
     }
 
-    if (drawingMode === 'polygon' && drawnPoints.length >= 2) {
-      // Show filled polygon with all placed points + cursor
+    if (neededType === 'polygon') {
       const positions = [...drawnPoints.map(p => p.cartesian), mouseCartesian]
-      previewEntity = viewer.entities.add({
-        polygon: {
-          hierarchy: new Cesium.PolygonHierarchy(positions),
-          material: Cesium.Color.GREEN.withAlpha(0.2),
-          outline: true,
-          outlineColor: Cesium.Color.LIME,
-          outlineWidth: 2,
-          heightReference: Cesium.HeightReference.CLAMP_TO_GROUND,
-          classificationType: Cesium.ClassificationType.TERRAIN
-        }
-      })
-    } else if (drawingMode === 'polygon' && drawnPoints.length === 1) {
-      // Only one point placed yet: show a simple line to the cursor
-      previewEntity = viewer.entities.add({
-        polyline: {
-          positions: [drawnPoints[0].cartesian, mouseCartesian],
-          width: 2,
-          material: Cesium.Color.LIME.withAlpha(0.8),
-          clampToGround: true,
-        }
-      })
-    } else if (drawingMode === 'boundingBox' && drawnPoints.length >= 1) {
-      // Show the bounding box rectangle defined by first point and cursor
+      if (!previewEntity) {
+        previewEntity = viewer.entities.add({
+          polygon: {
+            hierarchy: new Cesium.PolygonHierarchy(positions),
+            material: Cesium.Color.GREEN.withAlpha(0.2),
+            outline: true,
+            outlineColor: Cesium.Color.LIME,
+            outlineWidth: 2,
+            heightReference: Cesium.HeightReference.CLAMP_TO_GROUND,
+            classificationType: Cesium.ClassificationType.TERRAIN
+          }
+        })
+        previewEntity._previewType = 'polygon'
+      } else {
+        previewEntity.polygon.hierarchy = new Cesium.PolygonHierarchy(positions)
+      }
+    } else if (neededType === 'polyline') {
+      if (!previewEntity) {
+        previewEntity = viewer.entities.add({
+          polyline: {
+            positions: [drawnPoints[0].cartesian, mouseCartesian],
+            width: 2,
+            material: Cesium.Color.LIME.withAlpha(0.8),
+            clampToGround: true,
+          }
+        })
+        previewEntity._previewType = 'polyline'
+      } else {
+        previewEntity.polyline.positions = [drawnPoints[0].cartesian, mouseCartesian]
+      }
+    } else if (neededType === 'bbox') {
       const mouseCartographic = Cesium.Cartographic.fromCartesian(mouseCartesian)
       const mouseLon = Cesium.Math.toDegrees(mouseCartographic.longitude)
       const mouseLat = Cesium.Math.toDegrees(mouseCartographic.latitude)
@@ -241,17 +258,22 @@ export function useDrawing({ getViewer, emit }) {
         Cesium.Cartesian3.fromDegrees(minLon, maxLat)
       ]
 
-      previewEntity = viewer.entities.add({
-        polygon: {
-          hierarchy: new Cesium.PolygonHierarchy(boxCorners),
-          material: Cesium.Color.BLUE.withAlpha(0.2),
-          outline: true,
-          outlineColor: Cesium.Color.CYAN,
-          outlineWidth: 2,
-          heightReference: Cesium.HeightReference.CLAMP_TO_GROUND,
-          classificationType: Cesium.ClassificationType.TERRAIN,
-        }
-      })
+      if (!previewEntity) {
+        previewEntity = viewer.entities.add({
+          polygon: {
+            hierarchy: new Cesium.PolygonHierarchy(boxCorners),
+            material: Cesium.Color.BLUE.withAlpha(0.2),
+            outline: true,
+            outlineColor: Cesium.Color.CYAN,
+            outlineWidth: 2,
+            heightReference: Cesium.HeightReference.CLAMP_TO_GROUND,
+            classificationType: Cesium.ClassificationType.TERRAIN,
+          }
+        })
+        previewEntity._previewType = 'bbox'
+      } else {
+        previewEntity.polygon.hierarchy = new Cesium.PolygonHierarchy(boxCorners)
+      }
     }
   }
 
@@ -309,7 +331,6 @@ export function useDrawing({ getViewer, emit }) {
       }
     }
 
-    console.log('→ Drawing finished:', geometry)
     emit('geometry-drawn', geometry)
     emit('drawing-active', false)
 

@@ -37,8 +37,6 @@ export function useSunSimulation({ getViewer, getBuildingTileset }) {
     const buildingTileset = getBuildingTileset()
 
     if (enabled) {
-      console.log('→ SunSim enabled, updating sun position and shadows')
-
       viewer.shadows = true
       viewer.scene.globe.enableLighting = true
       viewer.terrainShadows = Cesium.ShadowMode.RECEIVE_ONLY
@@ -65,8 +63,8 @@ export function useSunSimulation({ getViewer, getBuildingTileset }) {
       viewer.shadowMap.softShadows = true
       viewer.shadowMap.darkness = 0.3
 
-      // Force a re-render: Cesium won't update shadows unless the camera or clock moves
-      _triggerCameraFly(viewer)
+      // Mark the scene dirty so Cesium redraws shadows immediately
+      viewer.scene.requestRender()
     } else {
       viewer.shadows = false
       viewer.scene.globe.enableLighting = false
@@ -78,27 +76,8 @@ export function useSunSimulation({ getViewer, getBuildingTileset }) {
 
       viewer.clock.shouldAnimate = false
 
-      _triggerCameraFly(viewer)
+      viewer.scene.requestRender()
     }
-  }
-
-  /**
-   * Perform an imperceptible camera move (pitch + 0.001 rad, duration 10ms).
-   *
-   * Why: Cesium's requestRenderMode only redraws when the scene is "dirty".
-   * Shadow updates are not considered dirty by themselves — a camera move
-   * is the cheapest way to invalidate the frame and force a shadow re-render.
-   */
-  function _triggerCameraFly(viewer) {
-    viewer.camera.flyTo({
-      destination: viewer.camera.position,
-      orientation: {
-        heading: viewer.camera.heading,
-        pitch: viewer.camera.pitch + 0.001,
-        roll: 0
-      },
-      duration: 0.01
-    })
   }
 
   return { update }

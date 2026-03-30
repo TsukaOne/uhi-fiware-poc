@@ -115,18 +115,48 @@
       .filter(Boolean)
   }
 
-  // Reprojection for 2D SVG
+  // Reprojection for 2D SVG — RAF only runs while the camera is moving
   let rafId = null
-  function startReprojection() {
+  let _onMoveStart = null
+  let _onMoveEnd = null
+
+  function _startRAF() {
+    if (rafId) return
     function tick() {
       buildScreenPoints()
       rafId = requestAnimationFrame(tick)
     }
-    tick()
+    rafId = requestAnimationFrame(tick)
   }
+
+  function _stopRAF() {
+    if (rafId) { cancelAnimationFrame(rafId); rafId = null }
+  }
+
+  function startReprojection() {
+    if (!props.cesiumViewer) return
+
+    buildScreenPoints() // initial render
+
+    _onMoveStart = () => _startRAF()
+    _onMoveEnd = () => {
+      _stopRAF()
+      buildScreenPoints() // final update when camera settles
+      props.cesiumViewer.scene.requestRender()
+    }
+
+    props.cesiumViewer.camera.moveStart.addEventListener(_onMoveStart)
+    props.cesiumViewer.camera.moveEnd.addEventListener(_onMoveEnd)
+  }
+
   function stopReprojection() {
-    if (rafId) cancelAnimationFrame(rafId)
-    rafId = null
+    _stopRAF()
+    if (props.cesiumViewer && _onMoveStart) {
+      props.cesiumViewer.camera.moveStart.removeEventListener(_onMoveStart)
+      props.cesiumViewer.camera.moveEnd.removeEventListener(_onMoveEnd)
+    }
+    _onMoveStart = null
+    _onMoveEnd = null
   }
 
   const screenPointsString = computed(() =>

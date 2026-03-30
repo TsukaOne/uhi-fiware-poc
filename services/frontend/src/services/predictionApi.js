@@ -21,17 +21,9 @@ function toBackendLayer(frontendId) {
  *
  * Usage:
  *   import { predictionApi } from '../services/predictionApi.js'
- *   const data = await predictionApi.getTBase()
+ *   const data = await predictionApi.getPixelValue(lon, lat)
  */
 export const predictionApi = {
-
-  /**
-   * GET /vlinder/t_base
-   * Fetch the current ambient temperature (T_base) from the VLINDER station network.
-   * Returns: { value, station_name, station_id, fallback }
-   */
-  getTBase: () =>
-    apiJSON(`${BASE}/vlinder/t_base`),
 
   /**
    * POST /predict/pixel/value
@@ -77,8 +69,7 @@ export const predictionApi = {
       body:   JSON.stringify({ geometry: geoJSON }),
     }),
 
-  /**
-   * POST /predict/zone
+  /**   * POST /predict/zone
    * Run the UHI prediction model over the selected zone.
    * Returns a base64-encoded PNG image + bounds + stats.
    *
@@ -103,4 +94,5 @@ export const predictionApi = {
       method: 'POST',
       body:   JSON.stringify({ layer: toBackendLayer(layerId), geometry }),
     }),
+
 }

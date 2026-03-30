@@ -535,5 +535,82 @@
   line-height: 1.4;
 }
 
+/* Pre-prediction UHI baseline */
+.zone-uhi-baseline {
+  padding-bottom: 4px;
+}
+
+/* UHI Before / After comparison */
+.uhi-comparison-section {
+  margin-top: 4px;
+}
+
+.uhi-comparison-grid {
+  padding: 0 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.uhi-cmp-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 10px;
+  background: rgba(255,255,255,0.03);
+  border: 1px solid rgba(255,255,255,0.06);
+  border-radius: 6px;
+  font-size: 11px;
+}
+
+.uhi-cmp-metric {
+  width: 36px;
+  font-size: 9px;
+  font-weight: 700;
+  color: rgba(255,255,255,0.4);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  flex-shrink: 0;
+}
+
+.uhi-cmp-before {
+  font-weight: 600;
+  color: rgba(255,255,255,0.5);
+  font-family: 'Courier New', monospace;
+  min-width: 55px;
+  text-align: right;
+}
+
+.uhi-cmp-arrow {
+  color: rgba(255,255,255,0.15);
+  font-size: 9px;
+  flex-shrink: 0;
+}
+
+.uhi-cmp-after {
+  font-weight: 700;
+  color: rgba(255,255,255,0.8);
+  font-family: 'Courier New', monospace;
+  min-width: 55px;
+  text-align: right;
+}
+
+.uhi-cmp-delta {
+  font-weight: 700;
+  font-size: 10px;
+  font-family: 'Courier New', monospace;
+  margin-left: auto;
+  flex-shrink: 0;
+  color: rgba(255,255,255,0.4);
+}
+
+.uhi-cmp-delta.positive {
+  color: #4ade80;
+}
+
+.uhi-cmp-delta.negative {
+  color: #f87171;
+}
+
 .result-fade-enter-active { transition: all 0.4s ease; }
 .result-fade-enter-from { opacity: 0; transform: translateY(8px); }

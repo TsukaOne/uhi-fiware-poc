@@ -151,6 +151,8 @@
         </div>
       </div>
     </div>
+
+    
     <!-- DRAWING HINT -->
     <Transition name="hint-fade">
       <div v-if="isDrawingActive" class="drawing-hint-banner">
@@ -181,7 +183,6 @@
    
     <!-- WORKFLOW BOTTOM BAR        -->
     <!-- Appears after drawing, before prediction -->
-
     <Transition name="bar-slide">
       <div v-if="showWorkflowBar" class="workflow-bar">
         <div
@@ -355,23 +356,23 @@
           <!-- Stats cards -->
           <div v-else-if="layerInfoStats" class="layer-info-cards">
             <div class="layer-info-card">
-              <span class="layer-info-card-label">Mean</span>
+              <span class="layer-info-card-label" title="Average value across all valid pixels in the area">Mean <i class="fas fa-question-circle" style="font-size:9px;color:rgba(255,255,255,0.25);margin-left:2px;"></i></span>
               <span class="layer-info-card-value">{{ layerInfoStats.mean }}</span>
             </div>
             <div class="layer-info-card">
-              <span class="layer-info-card-label">Min</span>
+              <span class="layer-info-card-label" title="Lowest pixel value found in the area">Min <i class="fas fa-question-circle" style="font-size:9px;color:rgba(255,255,255,0.25);margin-left:2px;"></i></span>
               <span class="layer-info-card-value min">{{ layerInfoStats.min }}</span>
             </div>
             <div class="layer-info-card">
-              <span class="layer-info-card-label">Max</span>
+              <span class="layer-info-card-label" title="Highest pixel value found in the area">Max <i class="fas fa-question-circle" style="font-size:9px;color:rgba(255,255,255,0.25);margin-left:2px;"></i></span>
               <span class="layer-info-card-value max">{{ layerInfoStats.max }}</span>
             </div>
             <div class="layer-info-card">
-              <span class="layer-info-card-label">Std Dev</span>
+              <span class="layer-info-card-label" title="Standard deviation — measures how spread out the values are from the mean">Std Dev <i class="fas fa-question-circle" style="font-size:9px;color:rgba(255,255,255,0.25);margin-left:2px;"></i></span>
               <span class="layer-info-card-value std">{{ layerInfoStats.std }}</span>
             </div>
             <div class="layer-info-card wide">
-              <span class="layer-info-card-label">Pixels</span>
+              <span class="layer-info-card-label" title="Total number of valid pixels analyzed">Pixels <i class="fas fa-question-circle" style="font-size:9px;color:rgba(255,255,255,0.25);margin-left:2px;"></i></span>
               <span class="layer-info-card-value">{{ layerInfoStats.pixel_count?.toLocaleString() }}</span>
             </div>
           </div>
@@ -420,6 +421,7 @@
       :visible="showZoneInfoPanel"
       :geometry="activeGeometry"
       ref="zoneInfoPanelRef"
+      @stats-loaded="onZoneStatsLoaded"
     />
 
     <!-- PREDICTION PANEL (replaces info panel)  -->
@@ -447,24 +449,78 @@
       :swipeRightLayerId="swipeRightLayerId"
       :sunSimEnabled="sunSimEnabled"
       :sunSimTime="sunSimTime"
-      :tBase="tBase"
       :uhiMin="uhiMin"
       :uhiMax="uhiMax"
       :predictionOverlay="predictionOverlay"
+      :sensorData="visibleSensors"
+      :sensorsVisible="anySensorsVisible"
       @geometry-drawn="onGeometryDrawnRouter"
       @drawing-active="onDrawingActive"
-      @pixel-click="onPixelClick"
+      @sensor-click="onSensorClick"
     />
 
-    <!-- PIXEL INFO PANEL (click on map) -->
-    <PixelInfoPanel
-      :visible="showPixelInfo"
-      :pixelData="pixelData"
-      :isLoading="pixelLoading"
-      :screenX="pixelScreenX"
-      :screenY="pixelScreenY"
-      @close="showPixelInfo = false"
-    />
+    <!-- SENSOR INFO POPUP (click on sensor dot) -->
+    <Transition name="pixel-fade">
+      <div v-if="selectedSensor" class="sensor-popup" :style="sensorPopupStyle">
+        <div class="sensor-popup-header">
+          <span class="sensor-popup-title">
+            <i class="fas fa-satellite-dish" style="color: #4ade80;"></i>
+            {{ selectedSensor.station_name || selectedSensor.station_id }}
+          </span>
+          <button class="sensor-popup-close" @click="selectedSensor = null">
+            <i class="fas fa-times"></i>
+          </button>
+        </div>
+        <div class="sensor-popup-body">
+          <div class="sensor-popup-row" v-if="selectedSensor.temperature != null">
+            <i class="fas fa-thermometer-half" style="color: #f87171;"></i>
+            <span class="sensor-popup-label">Temperature</span>
+            <span class="sensor-popup-val">{{ selectedSensor.temperature.toFixed(1) }}°C</span>
+          </div>
+          <div class="sensor-popup-row" v-if="selectedSensor.humidity != null">
+            <i class="fas fa-droplet" style="color: #38bdf8;"></i>
+            <span class="sensor-popup-label">Humidity</span>
+            <span class="sensor-popup-val">{{ selectedSensor.humidity.toFixed(0) }}%</span>
+          </div>
+          <div class="sensor-popup-row" v-if="selectedSensor.pressure != null">
+            <i class="fas fa-gauge" style="color: #a78bfa;"></i>
+            <span class="sensor-popup-label">Pressure</span>
+            <span class="sensor-popup-val">{{ selectedSensor.pressure.toFixed(1) }} hPa</span>
+          </div>
+          <div class="sensor-popup-row" v-if="selectedSensor.wind_speed != null">
+            <i class="fas fa-wind" style="color: #94a3b8;"></i>
+            <span class="sensor-popup-label">Wind</span>
+            <span class="sensor-popup-val">{{ selectedSensor.wind_speed.toFixed(1) }} m/s</span>
+          </div>
+          <div class="sensor-popup-row" v-if="selectedSensor.wind_direction != null">
+            <i class="fas fa-compass" style="color: #94a3b8;"></i>
+            <span class="sensor-popup-label">Direction</span>
+            <span class="sensor-popup-val">{{ selectedSensor.wind_direction.toFixed(0) }}°</span>
+          </div>
+          <div class="sensor-popup-divider"></div>
+          <div class="sensor-popup-row meta">
+            <i class="fas fa-tag" style="color: #6b7280;"></i>
+            <span class="sensor-popup-label">Provider</span>
+            <span class="sensor-popup-val">{{ selectedSensor.provider }}</span>
+          </div>
+          <div class="sensor-popup-row meta">
+            <i class="fas fa-fingerprint" style="color: #6b7280;"></i>
+            <span class="sensor-popup-label">Station ID</span>
+            <span class="sensor-popup-val mono">{{ selectedSensor.station_id.slice(0, 12) }}…</span>
+          </div>
+          <div class="sensor-popup-row meta" v-if="selectedSensor.observed_at">
+            <i class="fas fa-clock" style="color: #6b7280;"></i>
+            <span class="sensor-popup-label">Observed</span>
+            <span class="sensor-popup-val">{{ formatSensorTime(selectedSensor.observed_at) }}</span>
+          </div>
+          <div class="sensor-popup-row meta" v-if="selectedSensor.latitude != null">
+            <i class="fas fa-map-pin" style="color: #6b7280;"></i>
+            <span class="sensor-popup-label">Location</span>
+            <span class="sensor-popup-val">{{ selectedSensor.latitude.toFixed(4) }}°, {{ selectedSensor.longitude.toFixed(4) }}°</span>
+          </div>
+        </div>
+      </div>
+    </Transition>
 
     <!-- SWIPE DIVIDER -->
     <div
@@ -488,57 +544,26 @@
       :swipeEnabled="swipeEnabled"
       :swipeLeftLayerId="swipeLeftLayerId"
       :swipeRightLayerId="swipeRightLayerId"
-      :tBase="tBase"
       :uhiMin="uhiMin"
       :uhiMax="uhiMax"
       :predictionHistory="predictionHistory"
-      :showTempPanel="showTempPanel"
+      :vlinderSensors="vlinderSensors"
+      :scSensors="scSensors"
+      :vlinderVisible="vlinderVisible"
+      :scVisible="scVisible"
       @toggle-layer="toggleLayer"
       @set-opacity="setOpacity"
       @toggle-buildings="toggleBuildings"
       @toggle-trees="toggleTrees"
       @set-swipe-left="onSetSwipeLeft"
       @set-swipe-right="onSetSwipeRight"
-      @refresh-tbase="fetchTBase"
-      @toggle-temp-panel="showTempPanel = !showTempPanel"
       @layer-metadata="onLayerMetadata"
       @layer-download="onLayerDownload"
+      @toggle-prediction-history="togglePredictionHistory"
+      @toggle-vlinder="toggleVlinder"
+      @toggle-sensors-community="toggleSensorsCommunity"
+      @refresh-sensors="fetchSensors"
     />
-
-    <!-- DRAGGABLE TEMPERATURE PANEL -->
-    <div v-if="showTempPanel" class="temp-panel" :style="tempPanelStyle">
-      <div class="temp-panel-toolbar">
-        <div
-          class="temp-panel-drag"
-          @mousedown.stop.prevent="startDragTempPanel"
-        >
-          <i class="fas fa-ellipsis-vertical"></i>
-        </div>
-        <span class="temp-panel-title">
-          <i class="fas fa-thermometer-half" style="color: #4ade80;"></i>
-          Live Temperature
-        </span>
-        <button class="temp-panel-close" @click="showTempPanel = false">
-          <i class="fas fa-times"></i>
-        </button>
-      </div>
-      <div class="temp-panel-body">
-        <div class="temp-panel-value">
-          <span class="temp-big">{{ tBase != null ? tBase.toFixed(1) : '--' }}</span>
-          <span class="temp-unit">°C</span>
-        </div>
-        <div class="temp-panel-source">
-          <i class="fas fa-satellite-dish"></i>
-          VLINDER Station
-        </div>
-        <button class="temp-panel-refresh" @click="fetchTBase" title="Refresh">
-          <i class="fas fa-sync-alt"></i> Refresh
-        </button>
-        <div class="temp-panel-hint">
-          Baseline ambient temperature (T_base) used for UHI predictions.
-        </div>
-      </div>
-    </div>
 
   </div>
 </template>
@@ -553,15 +578,11 @@
     import PredictionPanel  from './components/PredictionPanel/PredictionPanel.vue'
     import ZoneObjectsPanel from './components/ZoneObjectsPanel/ZoneObjectsPanel.vue'
     import ZoneInfoPanel    from './components/ZoneInfoPanel/ZoneInfoPanel.vue'
-    import PixelInfoPanel   from './components/PixelInfoPanel/PixelInfoPanel.vue'
-
     // Composables
     import { useAppState }   from './App.js'
-    import { predictionApi } from './services/predictionApi.js'
     import { orionApi }      from './services/orionApi.js'
     import { useDraggable }  from './composables/App/useDraggable.js'
     import { useWorkflow }   from './composables/App/useWorkflow.js'
-    import { usePixelQuery } from './composables/App/usePixelQuery.js'
     import { useLayerInfo }  from './composables/App/useLayerInfo.js'
     import { useDownload }   from './composables/App/useDownload.js'
 
@@ -597,14 +618,6 @@
     stopDrag: stopToolboxDrag,
   } = useDraggable(window.innerWidth / 2 - 200, 90)
 
-  const {
-    style: tempPanelStyle,
-    startDrag: startDragTempPanel,
-    onMouseMove: onTempPanelMouseMove,
-    stopDrag: stopTempPanelDrag,
-  } = useDraggable(window.innerWidth - 260, 100)
-
-
   // ── Prediction workflow state machine ───────────────────────────────────────
   const {
     activeGeometry, showSelectionOverlay, showWorkflowBar, showPredictionPanel,
@@ -612,6 +625,7 @@
     predictionOverlay, zoneStatsData, predictionHistory,
     onGeometryDrawnPredict, goToStep, goToPredict, backToObjects,
     closePredictionPanel, cancelWorkflow, onZoneObjectsChanged, onPredict,
+    togglePredictionHistory,
   } = useWorkflow({
     addGeometry,
     stopDrawing,
@@ -619,6 +633,11 @@
     getViewMode: () => viewMode.value,
   })
 
+
+  // ── Zone stats forwarding (ZoneInfoPanel → PredictionPanel) ────────────────
+  function onZoneStatsLoaded(stats) {
+    zoneStatsData.value = stats
+  }
 
   // ── Drawing state ───────────────────────────────────────────────────────────
   const isDrawingActive = ref(false)
@@ -635,11 +654,29 @@
   })
 
 
-  // ── Pixel query (click on map → show layer values) ──────────────────────────
-  const { showPixelInfo, pixelData, pixelLoading, pixelScreenX, pixelScreenY, onPixelClick } =
-    usePixelQuery({
-      isBlocked: () => isWorkflowActive.value || downloadMode.value,
-    })
+  // ── Sensor click popup ──────────────────────────────────────────────────────
+  const selectedSensor = ref(null)
+  const sensorPopupX = ref(0)
+  const sensorPopupY = ref(0)
+
+  const sensorPopupStyle = computed(() => {
+    const x = Math.min(sensorPopupX.value + 16, window.innerWidth - 300)
+    const y = Math.min(sensorPopupY.value - 20, window.innerHeight - 400)
+    return { left: Math.max(8, x) + 'px', top: Math.max(70, y) + 'px' }
+  })
+
+  function onSensorClick({ sensor, screenX, screenY }) {
+    selectedSensor.value = sensor
+    sensorPopupX.value = screenX
+    sensorPopupY.value = screenY
+  }
+
+  function formatSensorTime(isoStr) {
+    if (!isoStr) return '—'
+    try {
+      return new Date(isoStr).toLocaleString()
+    } catch { return isoStr }
+  }
 
 
   // ── Layer statistics modal ──────────────────────────────────────────────────
@@ -670,8 +707,43 @@
   })
 
 
-  // ── Temperature + UHI range data ────────────────────────────────────────────
-  const tBase  = ref(15.0)
+  // ── Multi-sensor data ──────────────────────────────────────────────────────
+  const allSensors = ref([])
+  const vlinderVisible = ref(false)
+  const scVisible = ref(false)
+
+  const vlinderSensors = computed(() => allSensors.value.filter(s => s.provider === 'vlinder'))
+  const scSensors = computed(() => allSensors.value.filter(s => s.provider === 'sensors_community'))
+
+  // Sensors visible on the map = union of enabled providers
+  const visibleSensors = computed(() => {
+    const out = []
+    if (vlinderVisible.value) out.push(...vlinderSensors.value)
+    if (scVisible.value) out.push(...scSensors.value)
+    return out
+  })
+  const anySensorsVisible = computed(() => vlinderVisible.value || scVisible.value)
+
+  async function fetchSensors() {
+    try {
+      allSensors.value = await orionApi.getTemperatureSensors()
+    } catch (err) {
+      console.warn('Sensor fetch from Orion failed:', err)
+    }
+  }
+
+  function toggleVlinder() {
+    vlinderVisible.value = !vlinderVisible.value
+    if (vlinderVisible.value && allSensors.value.length === 0) fetchSensors()
+  }
+
+  function toggleSensorsCommunity() {
+    scVisible.value = !scVisible.value
+    if (scVisible.value && allSensors.value.length === 0) fetchSensors()
+  }
+
+
+  // ── UHI range data ─────────────────────────────────────────────────────────
   const uhiMin = ref(null)
   const uhiMax = ref(null)
 
@@ -687,20 +759,6 @@
       console.warn('Failed to fetch UHI range from Orion:', err)
     }
   }
-
-  async function fetchTBase() {
-    try {
-      const data = await predictionApi.getTBase()
-      tBase.value = data.value
-    } catch (err) {
-      console.warn('VLINDER fetch failed:', err)
-    }
-  }
-
-
-  // ── Temperature panel visibility ────────────────────────────────────────────
-  const showTempPanel = ref(false)
-
 
   // ── Toolbox: swipe, sun sim, mutual exclusion ───────────────────────────────
   const showSunSimPanel  = ref(false)
@@ -780,7 +838,6 @@
   // ── Global mouse handlers (shared across multiple draggables + swipe) ───────
   function onMouseMove(e) {
     onToolboxMouseMove(e)
-    onTempPanelMouseMove(e)
     if (isSwipeDragging.value) {
       // Keep both panels visible: clamp handle between 5% and 95% of screen width
       const SWIPE_MIN = 0.05
@@ -791,7 +848,6 @@
 
   function stopDrag() {
     stopToolboxDrag()
-    stopTempPanelDrag()
     if (isSwipeDragging.value) {
       isSwipeDragging.value = false
       document.body.style.cursor = ''
@@ -813,7 +869,7 @@
     window.addEventListener('mouseup', stopDrag)
     document.addEventListener('click', onClickOutside)
     fetchUhiRange()
-    fetchTBase()
+    fetchSensors()
   })
 
   onBeforeUnmount(() => {

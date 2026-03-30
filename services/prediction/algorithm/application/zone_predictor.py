@@ -591,6 +591,41 @@ class ZonePredictor:
                     "std": round(float(np.std(vals)), 2),
                 }
 
+        # UHI prediction raster (if available) — decode uint8 → °C
+        uhi_path = self._settings.output_path / "uhi_xgb_heatmap_brussels_2024.tif"
+        if uhi_path.exists():
+            try:
+                with rasterio.open(uhi_path) as uhi_src:
+                    raw = uhi_src.read(1, window=window)
+                    uhi_nodata = uhi_src.nodata or 255
+
+                    # Parse uhi_min / uhi_max from raster tags
+                    # Tag VALUE_RANGE = "X.XXX to Y.YYY °C ..."
+                    tags = uhi_src.tags()
+                    uhi_min_val, uhi_max_val = 0.0, 1.0
+                    vr = tags.get("VALUE_RANGE", "")
+                    if " to " in vr:
+                        try:
+                            parts = vr.split(" to ")
+                            uhi_min_val = float(parts[0].strip())
+                            uhi_max_val = float(parts[1].split()[0].strip())
+                        except (ValueError, IndexError):
+                            pass
+
+                    uhi_valid = valid.copy() & (raw != uhi_nodata)
+                    uhi_raw = raw[uhi_valid].astype(np.float32)
+                    if len(uhi_raw) > 0:
+                        # Decode: uint8 [0-254] → [uhi_min, uhi_max] °C
+                        uhi_decoded = (uhi_raw / 254.0) * (uhi_max_val - uhi_min_val) + uhi_min_val
+                        layer_stats["uhi"] = {
+                            "mean": round(float(np.mean(uhi_decoded)), 4),
+                            "min": round(float(np.min(uhi_decoded)), 4),
+                            "max": round(float(np.max(uhi_decoded)), 4),
+                            "std": round(float(np.std(uhi_decoded)), 4),
+                        }
+            except Exception as e:
+                logger.warning(f"Could not read UHI raster for zone stats: {e}")
+
         bounds = self._window_bounds_wgs84(window, ref_transform, ref_crs)
         return ZoneStatsResult(
             layer_stats=layer_stats, pixel_count=n_valid, bounds=bounds

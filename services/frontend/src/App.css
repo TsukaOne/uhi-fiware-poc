@@ -1162,142 +1162,97 @@
   color: #a78bfa;
 }
 
-/* ========================================
-   DRAGGABLE TEMPERATURE PANEL
-   ======================================== */
-.temp-panel {
-  position: absolute;
-  width: 220px;
-  background: rgba(var(--surface-dark-rgb), 0.95);
+/* ── Sensor Popup ──────────────────────────────────────────────────────── */
+
+.sensor-popup {
+  position: fixed;
+  z-index: 500;
+  background: rgba(15, 20, 35, 0.95);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 10px;
   backdrop-filter: blur(12px);
-  border-radius: 12px;
-  border: 1px solid rgba(74, 222, 128, 0.2);
-  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.35);
-  z-index: 1000;
-  overflow: hidden;
+  min-width: 250px;
+  max-width: 300px;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5);
 }
 
-.temp-panel-toolbar {
+.sensor-popup-header {
   display: flex;
   align-items: center;
-  gap: 8px;
-  padding: 8px 10px;
-  background: rgba(255, 255, 255, 0.06);
-  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+  justify-content: space-between;
+  padding: 10px 12px 8px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
 }
 
-.temp-panel-drag {
-  width: 20px;
-  height: 28px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  cursor: grab;
-  color: rgba(255, 255, 255, 0.4);
-  border-radius: 4px;
-  transition: all 0.15s;
-  flex-shrink: 0;
-}
-
-.temp-panel-drag:hover {
-  color: rgba(255, 255, 255, 0.7);
-  background: rgba(255, 255, 255, 0.06);
-}
-
-.temp-panel-drag:active {
-  cursor: grabbing;
-  color: white;
-}
-
-.temp-panel-title {
-  flex: 1;
-  color: white;
-  font-size: 0.8rem;
+.sensor-popup-title {
+  font-size: 0.82rem;
   font-weight: 600;
+  color: #e2e8f0;
   display: flex;
   align-items: center;
   gap: 6px;
 }
 
-.temp-panel-close {
-  width: 24px;
-  height: 24px;
-  background: rgba(255, 255, 255, 0.06);
+.sensor-popup-close {
+  background: none;
   border: none;
-  border-radius: 6px;
   color: rgba(255, 255, 255, 0.4);
   cursor: pointer;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 10px;
-  transition: all 0.15s;
-  flex-shrink: 0;
+  font-size: 0.75rem;
+  padding: 2px 4px;
 }
+.sensor-popup-close:hover { color: #fff; }
 
-.temp-panel-close:hover {
-  background: rgba(255, 255, 255, 0.12);
-  color: white;
-}
-
-.temp-panel-body {
-  padding: 14px;
+.sensor-popup-body {
+  padding: 8px 12px 10px;
   display: flex;
   flex-direction: column;
+  gap: 5px;
+}
+
+.sensor-popup-row {
+  display: flex;
   align-items: center;
   gap: 8px;
+  font-size: 0.78rem;
+  color: #cbd5e1;
 }
-
-.temp-panel-value {
-  display: flex;
-  align-items: baseline;
-  gap: 4px;
-}
-
-.temp-big {
-  font-size: 2.2rem;
-  font-weight: 700;
-  color: white;
-  letter-spacing: -1px;
-}
-
-.temp-unit {
-  font-size: 1rem;
-  color: rgba(255, 255, 255, 0.5);
-  font-weight: 500;
-}
-
-.temp-panel-source {
-  font-size: 0.7rem;
-  color: rgba(255, 255, 255, 0.4);
-  display: flex;
-  align-items: center;
-  gap: 5px;
-}
-
-.temp-panel-refresh {
-  padding: 5px 14px;
-  background: rgba(74, 222, 128, 0.08);
-  border: 1px solid rgba(74, 222, 128, 0.2);
-  border-radius: 6px;
-  color: var(--accent-light);
+.sensor-popup-row.meta {
   font-size: 0.72rem;
-  font-weight: 600;
-  cursor: pointer;
-  transition: all 0.15s;
-  display: flex;
-  align-items: center;
-  gap: 5px;
+  color: rgba(255, 255, 255, 0.45);
 }
-
-.temp-panel-refresh:hover {
-  background: rgba(74, 222, 128, 0.18);
-  border-color: rgba(74, 222, 128, 0.4);
-}
-
-.temp-panel-hint {
-  font-size: 0.68rem;
-  color: rgba(255, 255, 255, 0.35);
+.sensor-popup-row i {
+  width: 14px;
   text-align: center;
-  line-height: 1.4;
+  font-size: 0.72rem;
+}
+
+.sensor-popup-label {
+  flex: 1;
+}
+
+.sensor-popup-val {
+  font-weight: 600;
+  color: #f1f5f9;
+}
+.sensor-popup-val.mono {
+  font-family: monospace;
+  font-size: 0.7rem;
+}
+.sensor-popup-row.meta .sensor-popup-val {
+  color: rgba(255, 255, 255, 0.55);
+  font-weight: 400;
+}
+
+.sensor-popup-divider {
+  height: 1px;
+  background: rgba(255, 255, 255, 0.08);
+  margin: 3px 0;
+}
+
+.pixel-fade-enter-active { transition: all 0.2s ease; }
+.pixel-fade-leave-active { transition: all 0.15s ease; }
+.pixel-fade-enter-from, .pixel-fade-leave-to {
+  opacity: 0;
+  transform: translateY(6px);
 }

@@ -78,22 +78,43 @@ class Settings(BaseSettings):
     rural_point_row: int = Field(default=15561, alias="RURAL_POINT_ROW")
     rural_point_col: int = Field(default=12526, alias="RURAL_POINT_COL")
 
-    # ── VLINDER / Mooncake ──────────────────────────────────────────────
-    vlinder_station_id: str = Field(
-        default="bPlA09QS8LkV82rkdlAphY1d",
-        alias="VLINDER_STATION_ID",
-        description="Mooncake station ID for the reference 'cool' station (default: Ukkel KMI)",
+    # ── Multi-sensor ingestion ─────────────────────────────────────────
+    vlinder_stations: str = Field(
+        default=(
+            "bPlA09QS8LkV82rkdlAphY1d,"  # VLINDER 97 — Ukkel KMI
+            "5S5RGUTdmLFNGKiRqjGF8mMG,"  # VLINDER 95
+            "q40fv0czc0GeoAblR0YK4WwG,"  # VLINDER 93
+            "6M4Qz8B5farfKJjVtiKReZmQ,"  # VLINDER 74
+            "xgRUxj1N6DiRKzekQqI4Z5Ns,"  # VLINDER 90
+            "Ziocm4OqUjrp7W9988artyfN"   # VLINDER 96
+        ),
+        alias="VLINDER_STATIONS",
+        description="Comma-separated Mooncake station IDs for multi-sensor ingestion",
     )
-    vlinder_default_temp: float = Field(
-        default=15.0,
-        alias="VLINDER_DEFAULT_TEMP",
-        description="Fallback temperature if VLINDER API is unreachable and no cache",
-    )
-    vlinder_cache_ttl: float = Field(
+    sensor_sync_interval: float = Field(
         default=600.0,
-        alias="VLINDER_CACHE_TTL",
-        description="Cache TTL in seconds for VLINDER readings (default: 10 min)",
+        alias="SENSOR_SYNC_INTERVAL",
+        description="Interval in seconds between sensor sync cycles (default: 10 min)",
     )
+
+    # ── Sensors.community ────────────────────────────────────────────
+    sc_center_lat: float = Field(
+        default=50.83653, alias="SC_CENTER_LAT",
+        description="Center latitude for Sensors.community area query",
+    )
+    sc_center_lon: float = Field(
+        default=4.38047, alias="SC_CENTER_LON",
+        description="Center longitude for Sensors.community area query",
+    )
+    sc_radius_km: float = Field(
+        default=9.91, alias="SC_RADIUS_KM",
+        description="Radius in km for Sensors.community area query",
+    )
+
+    @property
+    def vlinder_station_ids(self) -> list[str]:
+        """Parse the comma-separated station IDs into a list."""
+        return [s.strip() for s in self.vlinder_stations.split(",") if s.strip()]
 
     # ── Training hyperparameter defaults ──────────────────────────────
     training_sample_rate: float = Field(default=0.005, alias="TRAINING_SAMPLE_RATE")

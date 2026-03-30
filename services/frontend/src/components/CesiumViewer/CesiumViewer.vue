@@ -18,13 +18,14 @@
     swipeRightLayerId: { type: String, default: null },
     sunSimEnabled: { type: Boolean, default: false },
     sunSimTime: { type: Number, default: 720 },
-    tBase: { type: Number, default: null },
     uhiMin: { type: Number, default: null },
     uhiMax: { type: Number, default: null },
-    predictionOverlay: { type: Object, default: null }
+    predictionOverlay: { type: Object, default: null },
+    sensorData: { type: Array, default: () => [] },
+    sensorsVisible: { type: Boolean, default: false }
   })
 
-  const emit = defineEmits(['geometry-drawn', 'drawing-active', 'pixel-click'])
+  const emit = defineEmits(['geometry-drawn', 'drawing-active', 'sensor-click'])
 
   const { cesiumContainer, getViewer, flyTo, undoLastPoint } = useCesiumViewer(props, emit)
 

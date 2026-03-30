@@ -6,7 +6,7 @@ import { useWmsLayers }         from '../../composables/Cesium/useWmsLayers.js'
 import { useCameraControls }    from '../../composables/Cesium/useCameraControls.js'
 import { useSunSimulation }     from '../../composables/Cesium/useSunSimulation.js'
 import { usePredictionOverlay } from '../../composables/Cesium/usePredictionOverlay.js'
-import { usePixelClick }        from '../../composables/Cesium/usePixelClick.js'
+import { useSensorMarkers }     from '../../composables/Cesium/useSensorMarkers.js'
 
 // Brussels center — initial camera destination on startup
 // height: 17 000 m gives a comfortable city-wide overview on first load
@@ -25,7 +25,7 @@ const CESIUM_ASSET_BUILDINGS = 3474524
  */
 export function useCesiumViewer(props, emit) {
 
-  // ── Viewer state (scoped here, never at module level) ──────────────────────
+  // ── Viewer state ──────────────────────
   const cesiumContainer = ref(null)
   let viewer = null
   let buildingTileset = null
@@ -62,8 +62,8 @@ export function useCesiumViewer(props, emit) {
     getViewer: () => viewer,
   })
 
-  const pixelClick = usePixelClick({
-    getViewer:   () => viewer,
+  const sensorMarkers = useSensorMarkers({
+    getViewer: () => viewer,
     emit,
     getIsDrawing: drawing.getIsDrawing,
   })
@@ -81,7 +81,6 @@ export function useCesiumViewer(props, emit) {
 
 
   // ── Initialization ─────────────────────────────────────────────────────────
-
   async function _initCesium() {
     // TODO: move token to .env (VITE_CESIUM_ION_TOKEN)
     Cesium.Ion.defaultAccessToken = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJqdGkiOiJhY2E3ZDhlNC03Yjc0LTQzM2QtYmI5My0zYWQ3NjIwOTk0OTciLCJpZCI6Mjc4NzM4LCJpYXQiOjE3NDA0ODg1MjB9.VsZjL6pbKSwR_SBbxUq-KRweOU_P3R8DKjSpeD0EICY"
@@ -89,7 +88,7 @@ export function useCesiumViewer(props, emit) {
     viewer = new Cesium.Viewer(cesiumContainer.value, {
       baseLayerPicker:       false,
       geocoder:              true,
-      homeButton:            true,
+      homeButton:            false,
       sceneModePicker:       false,
       navigationHelpButton:  false,
       animation:             false,
@@ -104,7 +103,7 @@ export function useCesiumViewer(props, emit) {
 
     // Render on demand: only redraw when the scene actually changes
     viewer.scene.requestRenderMode = true
-    viewer.scene.maximumRenderTimeChange = 0.0
+    viewer.scene.maximumRenderTimeChange = 500
 
     // Terrain — load once; fall back to ellipsoid if unavailable
     try {
@@ -120,8 +119,8 @@ export function useCesiumViewer(props, emit) {
     // Depth testing ensures buildings sit on terrain rather than floating
     viewer.scene.globe.depthTestAgainstTerrain = true
 
+    // Setup WMS layers before flying to the init view
     wmsLayers.setupImageryProviders()
-
     viewer.camera.flyTo({
       destination: Cesium.Cartesian3.fromDegrees(
         BRUSSELS_CENTER.longitude,
@@ -136,15 +135,17 @@ export function useCesiumViewer(props, emit) {
       duration: 0,
     })
 
+    // Load the building tileset immediately
     await _loadBuildingTileset()
+    buildingTileset.show = false
 
     // Load WMS layers that are already marked as visible in props
     props.layers
       .filter(layer => layer.visible)
       .forEach(layer => wmsLayers.addWmsLayer(layer))
 
-    // Pixel click handler needs a brief delay for the viewer canvas to be ready
-    setTimeout(() => pixelClick.setup(), 1000)
+    // Sensor click handler needs a brief delay for the viewer canvas to be ready
+    setTimeout(() => sensorMarkers.setupClickHandler(), 1000)
   }
 
   /**
@@ -228,8 +229,8 @@ export function useCesiumViewer(props, emit) {
   // ── Cleanup ────────────────────────────────────────────────────────────────
 
   function _cleanupCesium() {
-    pixelClick.cleanup()
     predictionOverlay.cleanup()
+    sensorMarkers.cleanup()
     wmsLayers.cleanup()
 
     if (viewer) {
@@ -240,12 +241,13 @@ export function useCesiumViewer(props, emit) {
 
 
   // ── Vue watchers ───────────────────────────────────────────────────────────
-  // Each watcher delegates directly to the relevant composable.
 
+  // View mode changes 
   watch(() => props.viewMode, (mode) => {
     cameraControls.updateViewMode(mode, props.sunSimEnabled, props.sunSimTime)
   })
 
+  // Building tileset visibility - Loaded on init, toggle visibility with buildingVisible prop
   watch(() => props.buildingVisible, (isVisible) => {
     if (buildingTileset) {
       buildingTileset.show = isVisible
@@ -317,7 +319,15 @@ export function useCesiumViewer(props, emit) {
 
   watch(() => props.predictionOverlay, (overlay) => {
     predictionOverlay.setPredictionOverlay(overlay)
-  }, { deep: true })
+  })
+
+  watch(
+    [() => props.sensorData, () => props.sensorsVisible],
+    ([sensors, visible]) => {
+      sensorMarkers.updateMarkers(sensors, visible)
+    },
+    { deep: true }
+  )
 
 
   // ── Public API (exposed to CesiumViewer.vue via defineExpose) ──────────────

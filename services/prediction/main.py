@@ -18,7 +18,6 @@ from fastapi import FastAPI
 
 from algorithm.api.prediction_routeur import router as prediction_router
 from algorithm.api.training_router import router as training_router
-from algorithm.api.vlinder_router import router as vlinder_router
 from algorithm.api.zone_router import router as zone_router
 from algorithm.application.prediction_orchestrator import PredictionOrchestrator
 from algorithm.application.training_orchestrator import TrainingOrchestrator
@@ -28,7 +27,9 @@ from algorithm.application.zone_predictor import ZonePredictor
 from algorithm.infrastructure.layer_resolver import LayerResolver
 from algorithm.infrastructure.orion_client import OrionClient
 from algorithm.infrastructure.orion_publisher import OrionPublisher
-from algorithm.infrastructure.vlinder_client import VlinderClient
+from algorithm.infrastructure.sensor_ingestion.vlinder_provider import VlinderProvider
+from algorithm.infrastructure.sensor_ingestion.sensors_community_provider import SensorsCommunityProvider
+from algorithm.infrastructure.sensor_ingestion.orion_sync import SensorSyncService
 from algorithm.predict_service import _PredictionState
 from algorithm.training_service import TrainingState
 
@@ -48,13 +49,6 @@ orion_publisher = OrionPublisher(orion_client)
 
 # UHI raster engine for reading and processing rasters files.
 raster_engine = UHIRasterEngine()
-
-# Vlinder client for fetching weather data from the VLINDER API
-vlinder_client = VlinderClient(
-    station_id=settings.vlinder_station_id,
-    default_temp=settings.vlinder_default_temp,
-    cache_ttl_seconds=settings.vlinder_cache_ttl,
-)
 
 # Training state for keepiing track of the training process.
 training_state = TrainingState()
@@ -82,6 +76,18 @@ zone_predictor = ZonePredictor(
     model_path=settings.model_path,
     layer_resolver=layer_resolver,
     settings=settings,
+)
+
+# Multi-sensor ingestion: VLINDER + Sensors.community → Orion sync
+vlinder_provider = VlinderProvider(station_ids=settings.vlinder_station_ids)
+sensors_community_provider = SensorsCommunityProvider(
+    lat=settings.sc_center_lat,
+    lon=settings.sc_center_lon,
+    radius_km=settings.sc_radius_km,
+)
+sensor_sync_service = SensorSyncService(
+    providers=[vlinder_provider, sensors_community_provider],
+    orion_client=orion_client,
 )
 
 
@@ -129,7 +135,19 @@ async def lifespan(app: FastAPI):
             logger.warning(f"Subscription registration attempt {attempt + 1}/5 failed: {exc}")
             await asyncio.sleep(3)
 
+    # Start periodic sensor sync in the background
+    sync_task = asyncio.create_task(
+        sensor_sync_service.run_periodic(settings.sensor_sync_interval)
+    )
+    logger.info(
+        f"Sensor sync started: {len(settings.vlinder_station_ids)} VLINDER stations + "
+        f"Sensors.community ({settings.sc_center_lat}, {settings.sc_center_lon}, "
+        f"r={settings.sc_radius_km}km), interval={settings.sensor_sync_interval}s"
+    )
+
     yield
+
+    sync_task.cancel()
     logger.info("Shutting down UHI Prediction Service")
 
 
@@ -141,11 +159,12 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
-# Prediction, training and VLINDER API routes.
+# Prediction, training, and sensor API routes.
+from algorithm.api.sensor_router import router as sensor_router
 app.include_router(prediction_router)
 app.include_router(training_router)
-app.include_router(vlinder_router)
 app.include_router(zone_router)
+app.include_router(sensor_router)
 
 
 @app.get("/health")

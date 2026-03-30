@@ -87,11 +87,11 @@ class VlinderClient:
 
     async def _fetch_latest(self) -> TBaseReading:
         """Hit the Mooncake measurements endpoint for one station."""
-        url = f"{MOONCAKE_BASE_URL}/measurements"
-        params = {"stationId": self._station_id}
+        url = f"{MOONCAKE_BASE_URL}/measurements/{self._station_id}"
+        logger.debug(f"Fetching latest measurement for station {self._station_id} from Mooncake API")
 
         async with httpx.AsyncClient(timeout=self._timeout) as client:
-            resp = await client.get(url, params=params)
+            resp = await client.get(url)
             resp.raise_for_status()
 
         data = resp.json()

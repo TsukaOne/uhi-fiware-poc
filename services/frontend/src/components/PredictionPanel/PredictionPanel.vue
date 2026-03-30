@@ -83,6 +83,27 @@
         {{ zoneObjects.length }} object{{ zoneObjects.length > 1 ? 's' : '' }} placed
       </div>
 
+      <!-- Pre-prediction: UHI baseline stats from zone analysis -->
+      <div v-if="!predictionResult && zoneStats?.layer_stats?.['uhi']" class="zone-uhi-baseline">
+        <div class="panel-divider">
+          <span>Current UHI values</span>
+        </div>
+        <div class="result-cards">
+          <div class="result-card main">
+            <span class="rc-label">Mean UHI</span>
+            <span class="rc-value heat">{{ zoneStats.layer_stats['uhi'].mean?.toFixed(2) }}°C</span>
+          </div>
+          <div class="result-card">
+            <span class="rc-label">Min</span>
+            <span class="rc-value">{{ zoneStats.layer_stats['uhi'].min?.toFixed(2) }}°C</span>
+          </div>
+          <div class="result-card">
+            <span class="rc-label">Max</span>
+            <span class="rc-value">{{ zoneStats.layer_stats['uhi'].max?.toFixed(2) }}°C</span>
+          </div>
+        </div>
+      </div>
+
       <!-- Pre-prediction: button + zone size warning -->
       <div v-if="!predictionResult" class="predict-section">
         <div v-if="estimatedPixels > 50000" class="zone-size-warning">
@@ -135,9 +156,39 @@
             </span>
           </div>
 
-          <!-- Before / After comparison -->
+          <!-- UHI Before / After comparison -->
+          <div v-if="zoneStats?.layer_stats?.['uhi']" class="uhi-comparison-section">
+            <div class="panel-divider">
+              <span>UHI Before / After</span>
+            </div>
+            <div class="uhi-comparison-grid">
+              <div class="uhi-cmp-row">
+                <span class="uhi-cmp-metric">Mean</span>
+                <span class="uhi-cmp-before">{{ zoneStats.layer_stats['uhi'].mean?.toFixed(2) }}°C</span>
+                <i class="fas fa-arrow-right uhi-cmp-arrow"></i>
+                <span class="uhi-cmp-after">{{ predictionResult.stats.mean_uhi.toFixed(2) }}°C</span>
+                <span class="uhi-cmp-delta" :class="getUhiDeltaClass('mean')">{{ getUhiDeltaFormatted('mean') }}</span>
+              </div>
+              <div class="uhi-cmp-row">
+                <span class="uhi-cmp-metric">Min</span>
+                <span class="uhi-cmp-before">{{ zoneStats.layer_stats['uhi'].min?.toFixed(2) }}°C</span>
+                <i class="fas fa-arrow-right uhi-cmp-arrow"></i>
+                <span class="uhi-cmp-after">{{ predictionResult.stats.min_uhi.toFixed(2) }}°C</span>
+                <span class="uhi-cmp-delta" :class="getUhiDeltaClass('min')">{{ getUhiDeltaFormatted('min') }}</span>
+              </div>
+              <div class="uhi-cmp-row">
+                <span class="uhi-cmp-metric">Max</span>
+                <span class="uhi-cmp-before">{{ zoneStats.layer_stats['uhi'].max?.toFixed(2) }}°C</span>
+                <i class="fas fa-arrow-right uhi-cmp-arrow"></i>
+                <span class="uhi-cmp-after">{{ predictionResult.stats.max_uhi.toFixed(2) }}°C</span>
+                <span class="uhi-cmp-delta" :class="getUhiDeltaClass('max')">{{ getUhiDeltaFormatted('max') }}</span>
+              </div>
+            </div>
+          </div>
+
+          <!-- Before / After comparison (input layers) -->
           <div class="panel-divider" v-if="zoneStats && hasComparison">
-            <span>Before / After Comparison</span>
+            <span>Input Layer Comparison</span>
           </div>
 
           <div v-if="zoneStats && hasComparison" class="comparison-list">
@@ -323,6 +374,36 @@ function getDeltaClass(key) {
   return d > 0 ? 'negative' : d < 0 ? 'positive' : ''
 }
 
+// UHI comparison helpers (original zone vs simulated)
+const uhiMetricMap = {
+  mean: { before: 'mean', after: 'mean_uhi' },
+  min:  { before: 'min',  after: 'min_uhi' },
+  max:  { before: 'max',  after: 'max_uhi' },
+}
+
+function getUhiDelta(metric) {
+  const map = uhiMetricMap[metric]
+  if (!map) return null
+  const before = props.zoneStats?.layer_stats?.['uhi']?.[map.before]
+  const after = predictionResult.value?.stats?.[map.after]
+  if (before == null || after == null) return null
+  return after - before
+}
+
+function getUhiDeltaFormatted(metric) {
+  const d = getUhiDelta(metric)
+  if (d === null) return '—'
+  const sign = d >= 0 ? '+' : ''
+  return `${sign}${d.toFixed(2)}°C`
+}
+
+function getUhiDeltaClass(metric) {
+  const d = getUhiDelta(metric)
+  if (d === null) return ''
+  // For UHI: lower is better (positive = worse, negative = better)
+  return d > 0 ? 'negative' : d < 0 ? 'positive' : ''
+}
+
 async function launchPrediction() {
   if (!props.geometry?.geoJSON) return
 
@@ -344,6 +425,9 @@ async function launchPrediction() {
 
     const data = await predictionApi.predictZone(body)
     predictionResult.value = data
+    if (data.stats?.layer_stats) {
+      afterStats.value = { layer_stats: data.stats.layer_stats }
+    }
 
     emit('predict', {
       geometry: props.geometry,

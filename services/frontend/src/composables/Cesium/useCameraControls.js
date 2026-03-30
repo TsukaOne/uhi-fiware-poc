@@ -13,13 +13,11 @@ import * as Cesium from 'cesium'
  * @param {() => Cesium.Cesium3DTileset}   options.getBuildingTileset - Returns the building tileset (may be null)
  * @param {() => Cesium.Cesium3DTileset}   options.getTreeTileset     - Returns the tree tileset (may be null)
  * @param {Function}                       options.onSunSimRestore     - Callback to re-apply sun simulation in 3D
- *                                           Signature: (sunSimEnabled, sunSimTime) => void
  */
 export function useCameraControls({ getViewer, getBuildingTileset, getTreeTileset, onSunSimRestore }) {
 
   // Custom pan handler installed in 2D mode
   let manualPanHandler = null
-
 
   /**
    * Switch the viewer between '2D' (constrained top-down) and '3D' (full Cesium).
@@ -50,12 +48,6 @@ export function useCameraControls({ getViewer, getBuildingTileset, getTreeTilese
 
   /**
    * Lock the camera to a strict top-down view and install a manual pan handler.
-   *
-   * Why a custom pan handler?
-   * Cesium's built-in LEFT_DRAG in 2D-like mode can drift due to the camera
-   * being fully 3D under the hood. We manually compute the world delta between
-   * two consecutive mouse positions and translate the camera by that delta,
-   * which gives accurate, stable panning.
    */
   function _activate2DMode(viewer, sunSimEnabled) {
     const controller = viewer.scene.screenSpaceCameraController
@@ -92,27 +84,27 @@ export function useCameraControls({ getViewer, getBuildingTileset, getTreeTilese
 
     manualPanHandler.setInputAction((event) => {
       isDragging = true
-      lastMousePosition = Cesium.Cartesian2.clone(event.position)
+      lastMousePosition = { x: event.position.x, y: event.position.y }
     }, Cesium.ScreenSpaceEventType.LEFT_DOWN)
 
     manualPanHandler.setInputAction((event) => {
       if (!isDragging || !lastMousePosition) return
 
-      const ray1 = viewer.camera.getPickRay(lastMousePosition)
-      const ray2 = viewer.camera.getPickRay(event.endPosition)
-      if (!ray1 || !ray2) return
+      const pixelDx = event.endPosition.x - lastMousePosition.x
+      const pixelDy = event.endPosition.y - lastMousePosition.y
 
-      const p1 = viewer.scene.globe.pick(ray1, viewer.scene)
-      const p2 = viewer.scene.globe.pick(ray2, viewer.scene)
-      if (!p1 || !p2) return
+      // Derive world-space meters per pixel from camera height + horizontal FOV.
+      // No GPU readback needed — pure math on existing camera state.
+      const height = viewer.camera.positionCartographic.height
+      const fov = viewer.camera.frustum.fov || 1.0
+      const metersPerPixel = (2 * height * Math.tan(fov / 2)) / viewer.scene.canvas.clientWidth
 
-      // Move camera in the opposite direction of the mouse delta (drag-world effect)
-      const delta = Cesium.Cartesian3.subtract(p1, p2, new Cesium.Cartesian3())
-      viewer.camera.position = Cesium.Cartesian3.add(
-        viewer.camera.position, delta, new Cesium.Cartesian3()
-      )
+      viewer.camera.moveRight(-pixelDx * metersPerPixel)
+      viewer.camera.moveUp(pixelDy * metersPerPixel)
+      viewer.scene.requestRender()
 
-      lastMousePosition = Cesium.Cartesian2.clone(event.endPosition)
+      lastMousePosition.x = event.endPosition.x
+      lastMousePosition.y = event.endPosition.y
     }, Cesium.ScreenSpaceEventType.MOUSE_MOVE)
 
     manualPanHandler.setInputAction(() => {
@@ -132,7 +124,6 @@ export function useCameraControls({ getViewer, getBuildingTileset, getTreeTilese
 
   /**
    * Restore full 3D Cesium interaction: all camera controls, atmosphere, buildings.
-   * Also re-applies sun simulation if it was active when switching to 3D.
    */
   function _activate3DMode(viewer, sunSimEnabled, sunSimTime) {
     const controller = viewer.scene.screenSpaceCameraController
@@ -158,9 +149,6 @@ export function useCameraControls({ getViewer, getBuildingTileset, getTreeTilese
 
     viewer.scene.globe.enableLighting = sunSimEnabled
     viewer.scene.skyAtmosphere.show = true
-
-    const buildingTileset = getBuildingTileset()
-    if (buildingTileset) buildingTileset.show = true
 
     // Re-apply sun simulation state after switching to 3D
     if (sunSimEnabled) {

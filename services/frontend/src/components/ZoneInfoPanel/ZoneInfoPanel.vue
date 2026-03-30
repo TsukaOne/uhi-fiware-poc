@@ -52,16 +52,16 @@
         <!-- UHI Summary Cards (always visible) -->
         <div class="uhi-summary" v-if="stats.layer_stats['uhi']">
           <div class="uhi-card main">
-            <span class="uhi-card-label">Mean UHI</span>
-            <span class="uhi-card-value heat">{{ formatValue(stats.layer_stats['uhi'].mean, '') }}</span>
+            <span class="uhi-card-label" data-tooltip="Average UHI intensity across all pixels in the zone">Mean UHI <i class="fas fa-question-circle tooltip-icon"></i></span>
+            <span class="uhi-card-value heat">{{ formatValue(stats.layer_stats['uhi'].mean, '') }}°C</span>
           </div>
           <div class="uhi-card">
-            <span class="uhi-card-label">Min</span>
-            <span class="uhi-card-value">{{ formatValue(stats.layer_stats['uhi'].min, '') }}</span>
+            <span class="uhi-card-label" data-tooltip="Lowest UHI intensity found in the zone">Min <i class="fas fa-question-circle tooltip-icon"></i></span>
+            <span class="uhi-card-value">{{ formatValue(stats.layer_stats['uhi'].min, '') }}°C</span>
           </div>
           <div class="uhi-card">
-            <span class="uhi-card-label">Max</span>
-            <span class="uhi-card-value">{{ formatValue(stats.layer_stats['uhi'].max, '') }}</span>
+            <span class="uhi-card-label" data-tooltip="Highest UHI intensity found in the zone">Max <i class="fas fa-question-circle tooltip-icon"></i></span>
+            <span class="uhi-card-value">{{ formatValue(stats.layer_stats['uhi'].max, '') }}°C</span>
           </div>
         </div>
 
@@ -107,19 +107,19 @@
               </div>
               <div class="layer-stat-values" v-if="stats.layer_stats[layer.key]">
                 <div class="layer-stat-item">
-                  <span class="lsi-label">Mean</span>
+                  <span class="lsi-label" data-tooltip="Average value across all valid pixels">Mean</span>
                   <span class="lsi-value">{{ formatValue(stats.layer_stats[layer.key].mean, layer.unit) }}</span>
                 </div>
                 <div class="layer-stat-item">
-                  <span class="lsi-label">Min</span>
+                  <span class="lsi-label" data-tooltip="Lowest pixel value in the zone">Min</span>
                   <span class="lsi-value dim">{{ formatValue(stats.layer_stats[layer.key].min, layer.unit) }}</span>
                 </div>
                 <div class="layer-stat-item">
-                  <span class="lsi-label">Max</span>
+                  <span class="lsi-label" data-tooltip="Highest pixel value in the zone">Max</span>
                   <span class="lsi-value dim">{{ formatValue(stats.layer_stats[layer.key].max, layer.unit) }}</span>
                 </div>
                 <div class="layer-stat-item">
-                  <span class="lsi-label">Std</span>
+                  <span class="lsi-label" data-tooltip="Standard deviation — how spread out values are from the mean">Std</span>
                   <span class="lsi-value dim">{{ formatValue(stats.layer_stats[layer.key].std, layer.unit) }}</span>
                 </div>
               </div>
@@ -155,7 +155,7 @@
     geometry: { type: Object, default: null }
   })
 
-  defineEmits(['close'])
+  const emit = defineEmits(['close', 'stats-loaded'])
 
   const isLoading = ref(false)
   const loadError = ref(null)
@@ -243,6 +243,7 @@
 
     try {
       stats.value = await predictionApi.getZoneStats(props.geometry.geoJSON)
+      if (stats.value) emit('stats-loaded', stats.value)
     } catch (err) {
       console.error('Zone stats fetch failed:', err)
       loadError.value = err.message || 'Failed to load zone statistics'

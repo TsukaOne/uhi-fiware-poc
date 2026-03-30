@@ -112,19 +112,47 @@ export function useWorkflow({ addGeometry, stopDrawing, set3D, getViewMode }) {
   function onPredict(payload) {
     if (!payload.result) return
 
-    predictionOverlay.value = {
+    const overlay = {
       image_base64: payload.result.image_base64,
       bounds:       payload.result.bounds,
       stats:        payload.result.stats,
     }
+
+    predictionOverlay.value = overlay
     workflowStep.value = 3
+
+    // Mark all previous entries as hidden, new entry is visible
+    predictionHistory.value.forEach(e => e.visible = false)
 
     predictionHistory.value.unshift({
       id:          Date.now(),
       date:        new Date().toLocaleString(),
       stats:       payload.result.stats,
       objectCount: zoneObjects.value.length,
+      visible:     true,
+      overlay,
     })
+  }
+
+  /**
+   * Toggle visibility of a prediction history entry.
+   * Only one entry can be visible at a time (radio behavior).
+   * @param {number} entryId
+   */
+  function togglePredictionHistory(entryId) {
+    const entry = predictionHistory.value.find(e => e.id === entryId)
+    if (!entry) return
+
+    if (entry.visible) {
+      // Hide it
+      entry.visible = false
+      predictionOverlay.value = null
+    } else {
+      // Show this one, hide all others
+      predictionHistory.value.forEach(e => e.visible = false)
+      entry.visible = true
+      predictionOverlay.value = entry.overlay || null
+    }
   }
 
   return {
@@ -147,5 +175,6 @@ export function useWorkflow({ addGeometry, stopDrawing, set3D, getViewMode }) {
     cancelWorkflow,
     onZoneObjectsChanged,
     onPredict,
+    togglePredictionHistory,
   }
 }

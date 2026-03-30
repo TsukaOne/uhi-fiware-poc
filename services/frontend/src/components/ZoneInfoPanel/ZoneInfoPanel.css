@@ -368,3 +368,45 @@
   align-items: center;
   gap: 6px;
 }
+
+/* Tooltip system */
+[data-tooltip] {
+  position: relative;
+  cursor: help;
+}
+
+.tooltip-icon {
+  font-size: 7px;
+  color: rgba(255,255,255,0.25);
+  margin-left: 2px;
+  vertical-align: middle;
+}
+
+[data-tooltip]:hover .tooltip-icon {
+  color: rgba(96, 165, 250, 0.7);
+}
+
+[data-tooltip]:hover::after {
+  content: attr(data-tooltip);
+  position: absolute;
+  bottom: calc(100% + 6px);
+  left: 50%;
+  transform: translateX(-50%);
+  padding: 6px 10px;
+  background: rgba(10, 14, 22, 0.97);
+  border: 1px solid rgba(96, 165, 250, 0.3);
+  border-radius: 6px;
+  color: rgba(255, 255, 255, 0.85);
+  font-size: 10px;
+  font-weight: 400;
+  white-space: normal;
+  max-width: 180px;
+  min-width: 100px;
+  text-align: center;
+  z-index: 100;
+  pointer-events: none;
+  line-height: 1.4;
+  letter-spacing: 0;
+  text-transform: none;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.4);
+}

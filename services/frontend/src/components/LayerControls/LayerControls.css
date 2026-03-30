@@ -452,17 +452,6 @@
   font-size: 10px;
 }
 
-/* REALTIME TEMP PREVIEW (inline in layer item) */
-.realtime-temp-preview {
-  margin: 6px 0 0 28px;
-}
-
-.temp-preview-value {
-  font-size: 1.1rem;
-  font-weight: 700;
-  color: rgba(255, 255, 255, 0.7);
-}
-
 .opacity-control {
   margin-top: 10px;
   padding-top: 8px;
@@ -717,6 +706,201 @@
 
 .hs-value.heat {
   color: #fb923c;
+}
+
+/* ========================================
+   SENSOR STATION LIST
+   ======================================== */
+.sensor-station-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-top: 6px;
+}
+
+.sensor-station-item {
+  padding: 8px 10px;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  border-radius: 6px;
+}
+
+.sensor-station-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 4px;
+}
+
+.sensor-station-name {
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: rgba(255, 255, 255, 0.7);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 170px;
+}
+
+.sensor-station-temp {
+  font-size: 0.85rem;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  flex-shrink: 0;
+}
+
+.sensor-station-details {
+  display: flex;
+  gap: 10px;
+  font-size: 0.68rem;
+  color: rgba(255, 255, 255, 0.4);
+}
+
+.sensor-station-details i {
+  font-size: 9px;
+  margin-right: 2px;
+}
+
+.sensor-sync-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.sensor-sync-btn {
+  width: 24px;
+  height: 24px;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 5px;
+  color: rgba(255, 255, 255, 0.4);
+  cursor: pointer;
+  font-size: 10px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.15s;
+  flex-shrink: 0;
+}
+
+.sensor-sync-btn:hover {
+  background: rgba(34, 211, 160, 0.15);
+  border-color: rgba(34, 211, 160, 0.3);
+  color: #22d3a0;
+}
+
+.sensor-sync-label {
+  font-size: 0.7rem;
+  color: rgba(255, 255, 255, 0.35);
+}
+
+/* ========================================
+   LAYER ABOUT BUTTON & PANEL
+   ======================================== */
+.layer-about-btn {
+  width: 22px;
+  height: 22px;
+  background: none;
+  border: none;
+  border-radius: 4px;
+  color: rgba(255, 255, 255, 0.25);
+  cursor: pointer;
+  font-size: 11px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.15s;
+  flex-shrink: 0;
+  margin-left: auto;
+}
+
+.layer-about-btn:hover {
+  color: rgba(96, 165, 250, 0.8);
+  background: rgba(96, 165, 250, 0.08);
+}
+
+.layer-about-btn.active {
+  color: #60a5fa;
+  background: rgba(96, 165, 250, 0.12);
+}
+
+.layer-about-panel {
+  margin: 8px 0 4px;
+  padding: 10px 12px;
+  background: rgba(96, 165, 250, 0.04);
+  border: 1px solid rgba(96, 165, 250, 0.12);
+  border-radius: 8px;
+}
+
+.layer-about-title {
+  font-size: 0.78rem;
+  font-weight: 700;
+  color: #60a5fa;
+  margin-bottom: 6px;
+  letter-spacing: 0.02em;
+}
+
+.layer-about-text {
+  font-size: 0.72rem;
+  color: rgba(255, 255, 255, 0.6);
+  line-height: 1.5;
+  margin: 0 0 8px;
+}
+
+.layer-about-section {
+  margin-top: 6px;
+  padding-top: 6px;
+  border-top: 1px solid rgba(255, 255, 255, 0.04);
+}
+
+.layer-about-section strong {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 0.7rem;
+  font-weight: 600;
+  color: rgba(255, 255, 255, 0.5);
+  margin-bottom: 3px;
+}
+
+.layer-about-section strong i {
+  font-size: 9px;
+  color: rgba(255, 255, 255, 0.35);
+}
+
+.layer-about-section.uhi strong i {
+  color: rgba(248, 113, 113, 0.6);
+}
+
+.layer-about-section p {
+  font-size: 0.7rem;
+  color: rgba(255, 255, 255, 0.5);
+  line-height: 1.5;
+  margin: 0;
+}
+
+/* Small checkbox variant for history items */
+.checkbox-wrapper.small {
+  gap: 0;
+}
+
+.checkbox-wrapper.small .checkmark {
+  width: 14px;
+  height: 14px;
+  border-width: 1.5px;
+  border-radius: 3px;
+}
+
+.checkbox-wrapper.small input:checked + .checkmark::after {
+  font-size: 9px;
+}
+
+.history-item.active {
+  background: rgba(66, 153, 225, 0.08);
+  border-color: rgba(66, 153, 225, 0.2);
 }
 
 /* ========================================
