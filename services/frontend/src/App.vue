@@ -563,6 +563,7 @@
       @toggle-vlinder="toggleVlinder"
       @toggle-sensors-community="toggleSensorsCommunity"
       @refresh-sensors="fetchSensors"
+      @select-sensor="onSelectSensor"
     />
 
   </div>
@@ -570,6 +571,7 @@
 
 <script setup>
     import { ref, computed, watch, nextTick, onMounted, onBeforeUnmount } from 'vue'
+    import * as Cesium from 'cesium'
 
     // Components
     import CesiumViewer     from './components/CesiumViewer/CesiumViewer.vue'
@@ -669,6 +671,36 @@
     selectedSensor.value = sensor
     sensorPopupX.value = screenX
     sensorPopupY.value = screenY
+  }
+
+  /**
+   * Called when a sensor is clicked in the LayerControls panel.
+   * Flies the camera to the sensor location and opens its popup.
+   */
+  function onSelectSensor(sensor) {
+    if (sensor.latitude == null || sensor.longitude == null) return
+
+    const viewer = cesiumViewerInstance.value
+    if (!viewer) return
+
+    // Fly to the sensor (works in both 2D top-down and 3D modes)
+    const height = viewMode.value === '2D' ? 800 : 1200
+    viewer.camera.flyTo({
+      destination: Cesium.Cartesian3.fromDegrees(sensor.longitude, sensor.latitude, height),
+      duration: 1.5,
+      complete: () => {
+        // After the camera arrives, convert the sensor's world position to screen coords
+        // and show the popup at that position
+        const worldPos = Cesium.Cartesian3.fromDegrees(sensor.longitude, sensor.latitude, 20)
+        const screenPos = Cesium.SceneTransforms.worldToWindowCoordinates(viewer.scene, worldPos)
+        if (screenPos) {
+          onSensorClick({ sensor, screenX: screenPos.x, screenY: screenPos.y })
+        } else {
+          // Fallback: center of screen
+          onSensorClick({ sensor, screenX: window.innerWidth / 2, screenY: window.innerHeight / 2 })
+        }
+      }
+    })
   }
 
   function formatSensorTime(isoStr) {

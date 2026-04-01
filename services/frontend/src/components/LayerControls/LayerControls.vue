@@ -322,7 +322,7 @@
                 <!-- Dropdown list of VLINDER sensors -->
                 <Transition name="section-slide">
                   <div v-if="vlinderVisible && vlinderSensors.length > 0" class="sensor-station-list">
-                    <div v-for="sensor in vlinderSensors" :key="sensor.station_id" class="sensor-station-item">
+                    <div v-for="sensor in vlinderSensors" :key="sensor.station_id" class="sensor-station-item clickable" @click="$emit('select-sensor', sensor)">
                       <div class="sensor-station-header">
                         <span class="sensor-station-name">{{ sensor.station_name || sensor.station_id.slice(0, 10) }}</span>
                         <span class="sensor-station-temp" :style="{ color: tempColor(sensor.temperature) }">
@@ -365,7 +365,7 @@
                 <!-- Dropdown list of Sensors.community sensors -->
                 <Transition name="section-slide">
                   <div v-if="scVisible && scSensors.length > 0" class="sensor-station-list">
-                    <div v-for="sensor in scSensors" :key="sensor.station_id" class="sensor-station-item">
+                    <div v-for="sensor in scSensors" :key="sensor.station_id" class="sensor-station-item clickable" @click="$emit('select-sensor', sensor)">
                       <div class="sensor-station-header">
                         <span class="sensor-station-name">{{ sensor.station_name || 'SC-' + sensor.station_id }}</span>
                         <span class="sensor-station-temp" :style="{ color: tempColor(sensor.temperature) }">
@@ -424,7 +424,8 @@
     'toggle-layer', 'set-opacity', 'toggle-buildings', 'toggle-trees',
     'set-swipe-left', 'set-swipe-right',
     'layer-metadata', 'layer-download',
-    'toggle-prediction-history', 'toggle-vlinder', 'toggle-sensors-community', 'refresh-sensors'
+    'toggle-prediction-history', 'toggle-vlinder', 'toggle-sensors-community', 'refresh-sensors',
+    'select-sensor'
   ])
 
   const { getLegendStyle } = useLayerControls()
@@ -538,12 +539,27 @@
     return props.layers.filter(layer => layer.category === category)
   }
 
+  /**
+   * Maps temperature to a CSS color using the same blue→green→yellow→red gradient
+   * as the sensor markers on the Cesium globe (useSensorMarkers._tempToColor).
+   * Range: -5°C (blue) → 15°C (green) → 25°C (yellow) → 40°C (red)
+   */
   function tempColor(temp) {
     if (temp == null) return 'rgba(255,255,255,0.4)'
-    if (temp < 5) return '#60a5fa'
-    if (temp < 15) return '#4ade80'
-    if (temp < 25) return '#fbbf24'
-    return '#f87171'
+    const t = Math.max(-5, Math.min(40, temp))
+    const ratio = (t + 5) / 45
+    let r, g, b
+    if (ratio < 0.33) {
+      const f = ratio / 0.33
+      r = 0; g = Math.round(f * 255); b = Math.round((1 - f) * 255)
+    } else if (ratio < 0.66) {
+      const f = (ratio - 0.33) / 0.33
+      r = Math.round(f * 255); g = 255; b = 0
+    } else {
+      const f = (ratio - 0.66) / 0.34
+      r = 255; g = Math.round((1 - f) * 255); b = 0
+    }
+    return `rgb(${r},${g},${b})`
   }
 
   // Drag state

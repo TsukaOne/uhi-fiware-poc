@@ -12,8 +12,8 @@ import { useSensorMarkers }     from '../../composables/Cesium/useSensorMarkers.
 // height: 17 000 m gives a comfortable city-wide overview on first load
 const BRUSSELS_CENTER = { longitude: 4.3817, latitude: 50.6403, height: 17_000 }
 
-// Cesium Ion asset IDs — update here if the tileset is re-published
-const CESIUM_ASSET_BUILDINGS = 3474524
+// 3D Buildings tileset URL (self-hosted on OVH S3)
+const BUILDINGS_TILESET_URL = 'https://digitaltwin.s3.gra.io.cloud.ovh.net/tilesets_manager/1764770609672/tileset.json'
 
 /**
  * useCesiumViewer — Main orchestrator for the Cesium 3D globe.
@@ -82,8 +82,6 @@ export function useCesiumViewer(props, emit) {
 
   // ── Initialization ─────────────────────────────────────────────────────────
   async function _initCesium() {
-    // TODO: move token to .env (VITE_CESIUM_ION_TOKEN)
-    Cesium.Ion.defaultAccessToken = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJqdGkiOiJhY2E3ZDhlNC03Yjc0LTQzM2QtYmI5My0zYWQ3NjIwOTk0OTciLCJpZCI6Mjc4NzM4LCJpYXQiOjE3NDA0ODg1MjB9.VsZjL6pbKSwR_SBbxUq-KRweOU_P3R8DKjSpeD0EICY"
 
     viewer = new Cesium.Viewer(cesiumContainer.value, {
       baseLayerPicker:       false,
@@ -103,7 +101,7 @@ export function useCesiumViewer(props, emit) {
 
     // Render on demand: only redraw when the scene actually changes
     viewer.scene.requestRenderMode = true
-    viewer.scene.maximumRenderTimeChange = 500
+    viewer.scene.maximumRenderTimeChange = 0.1
 
     // Terrain — load once; fall back to ellipsoid if unavailable
     try {
@@ -154,7 +152,7 @@ export function useCesiumViewer(props, emit) {
    */
   async function _loadBuildingTileset() {
     try {
-      buildingTileset = await Cesium.Cesium3DTileset.fromIonAssetId(CESIUM_ASSET_BUILDINGS)
+      buildingTileset = await Cesium.Cesium3DTileset.fromUrl(BUILDINGS_TILESET_URL)
       viewer.scene.primitives.add(buildingTileset)
 
       // Reduce quality during camera movement, restore when still
