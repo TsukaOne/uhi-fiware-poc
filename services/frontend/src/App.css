@@ -1256,3 +1256,202 @@
   opacity: 0;
   transform: translateY(6px);
 }
+
+/* ============================================================
+   WELCOME SPLASH
+   Full-screen overlay shown once on app load, introducing the
+   project as a FARI × Ville de Bruxelles collaboration.
+   ============================================================ */
+.welcome-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 5000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background:
+    radial-gradient(ellipse at 30% 20%, rgba(34, 211, 160, 0.18), transparent 55%),
+    radial-gradient(ellipse at 80% 80%, rgba(248, 113, 113, 0.14), transparent 55%),
+    linear-gradient(135deg, rgba(var(--surface-deeper-rgb), 0.96), rgba(var(--surface-dark-rgb), 0.96));
+  backdrop-filter: blur(6px);
+  cursor: pointer;
+}
+
+.welcome-card {
+  cursor: default;
+  max-width: 720px;
+  width: calc(100% - 48px);
+  padding: 56px 56px 48px;
+  border-radius: 18px;
+  background: rgba(255, 255, 255, 0.96);
+  box-shadow:
+    0 30px 80px rgba(0, 0, 0, 0.55),
+    0 0 0 1px rgba(255, 255, 255, 0.08);
+  text-align: center;
+  font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+  color: #1f2937;
+}
+
+.welcome-eyebrow {
+  display: inline-block;
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--accent);
+  background: rgba(34, 211, 160, 0.12);
+  padding: 6px 14px;
+  border-radius: 999px;
+  margin-bottom: 22px;
+}
+
+.welcome-title {
+  font-size: 2.4rem;
+  font-weight: 700;
+  line-height: 1.15;
+  margin: 0 0 14px;
+  color: #0f172a;
+  letter-spacing: -0.01em;
+}
+
+.welcome-subtitle {
+  font-size: 1.05rem;
+  line-height: 1.55;
+  color: #475569;
+  margin: 0 auto 36px;
+  max-width: 540px;
+}
+
+.welcome-subtitle strong {
+  color: #0f172a;
+  font-weight: 600;
+}
+
+.welcome-logos {
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;
+  align-items: center;
+  gap: 32px;
+  margin-bottom: 40px;
+}
+
+.welcome-logos .welcome-logo-fari { justify-self: end; }
+.welcome-logos .welcome-logo-vbx  { justify-self: start; }
+
+.welcome-logo {
+  display: block;
+  object-fit: contain;
+}
+
+.welcome-logo-fari {
+  height: 70px;
+  max-width: 280px;
+}
+
+.welcome-logo-vbx {
+  height: 78px;
+  max-width: 200px;
+}
+
+.welcome-logo-sep {
+  font-size: 1.6rem;
+  font-weight: 300;
+  color: #cbd5e1;
+}
+
+.welcome-enter-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  padding: 14px 32px;
+  border: none;
+  border-radius: 10px;
+  background: linear-gradient(135deg, var(--accent), #16a34a);
+  color: white;
+  font-size: 1rem;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  cursor: pointer;
+  transition: transform 0.15s ease, box-shadow 0.2s ease;
+  box-shadow: 0 8px 20px rgba(22, 163, 74, 0.35);
+}
+
+.welcome-enter-btn:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 12px 26px rgba(22, 163, 74, 0.45);
+}
+
+.welcome-enter-btn:active { transform: translateY(0); }
+
+.welcome-fade-enter-active,
+.welcome-fade-leave-active { transition: opacity 0.4s ease; }
+.welcome-fade-enter-from,
+.welcome-fade-leave-to { opacity: 0; }
+
+@media (max-width: 600px) {
+  .welcome-card { padding: 36px 24px; }
+  .welcome-title { font-size: 1.8rem; }
+  .welcome-logos { gap: 18px; }
+  .welcome-logo-fari { height: 50px; }
+  .welcome-logo-vbx  { height: 56px; }
+}
+
+/* ============================================================
+   COLLAB CORNER BADGE
+   Small persistent badge in the bottom-right of the viewer
+   reminding users this is a FARI × Ville de Bruxelles project.
+   ============================================================ */
+.collab-corner {
+  position: absolute;
+  right: 16px;
+  bottom: 16px;
+  z-index: 1500;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 14px;
+  background: rgba(255, 255, 255, 0.92);
+  border-radius: 10px;
+  box-shadow:
+    0 4px 14px rgba(0, 0, 0, 0.25),
+    0 0 0 1px rgba(0, 0, 0, 0.04);
+  pointer-events: auto;
+  font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+}
+
+.collab-corner-label {
+  font-size: 0.68rem;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: #475569;
+  white-space: nowrap;
+}
+
+.collab-corner-logos {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.collab-corner-logo {
+  display: block;
+  object-fit: contain;
+}
+
+.collab-corner-logo-fari {
+  height: 28px;
+  max-width: 110px;
+}
+
+.collab-corner-logo-vbx {
+  height: 30px;
+  max-width: 70px;
+}
+
+@media (max-width: 700px) {
+  .collab-corner-label { display: none; }
+  .collab-corner { padding: 6px 10px; gap: 8px; }
+  .collab-corner-logo-fari { height: 22px; }
+  .collab-corner-logo-vbx  { height: 24px; }
+}

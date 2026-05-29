@@ -105,6 +105,7 @@ export function useCesiumViewer(props, emit) {
 
     // Terrain — load once; fall back to ellipsoid if unavailable
     try {
+      console.log('Loading Cesium World Terrain...')
       const terrain = await Cesium.createWorldTerrainAsync({
         requestWaterMask:    false,
         requestVertexNormals: false,

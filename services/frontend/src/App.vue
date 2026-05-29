@@ -1,5 +1,39 @@
 <template>
   <div class="app-container">
+    <!-- WELCOME SPLASH -->
+    <Transition name="welcome-fade">
+      <div v-if="showWelcome" class="welcome-overlay" @click.self="enterApp">
+        <div class="welcome-card">
+          <div class="welcome-eyebrow">By FARI with the support of VBX</div>
+          <h1 class="welcome-title">Urban Heat Islands Viewer</h1>
+          <p class="welcome-subtitle">
+            By <strong>FARI &mdash; AI for the Common Good</strong>
+            with the support of the <strong>City of Brussels</strong>.
+          </p>
+
+          <div class="welcome-logos">
+            <img :src="fariLogo" alt="FARI - AI for the Common Good" class="welcome-logo welcome-logo-fari" />
+            <span class="welcome-logo-sep">&times;</span>
+            <img :src="vbxLogo" alt="Ville de Bruxelles" class="welcome-logo welcome-logo-vbx" />
+          </div>
+
+          <button class="welcome-enter-btn" @click="enterApp">
+            <i class="fas fa-arrow-right"></i>
+            Enter the viewer
+          </button>
+        </div>
+      </div>
+    </Transition>
+
+    <!-- COLLAB CORNER BADGE (persistent, bottom-right) -->
+    <div class="collab-corner" title="A FARI × Ville de Bruxelles collaboration">
+      <div class="collab-corner-logos">
+        <img :src="fariLogo" alt="FARI" class="collab-corner-logo collab-corner-logo-fari" />
+        <span class="collab-corner-logo-sep">with the support of </span>
+        <img :src="vbxLogo" alt="Ville de Bruxelles" class="collab-corner-logo collab-corner-logo-vbx" />
+      </div>
+    </div>
+
     <!-- NAVBAR -->
     <nav class="navbar">
       <div class="nav-left">
@@ -580,6 +614,10 @@
     import PredictionPanel  from './components/PredictionPanel/PredictionPanel.vue'
     import ZoneObjectsPanel from './components/ZoneObjectsPanel/ZoneObjectsPanel.vue'
     import ZoneInfoPanel    from './components/ZoneInfoPanel/ZoneInfoPanel.vue'
+    // Assets
+    import fariLogo from './images/logos/fari_logos.png'
+    import vbxLogo  from './images/logos/vbx_logos.png'
+
     // Composables
     import { useAppState }   from './App.js'
     import { orionApi }      from './services/orionApi.js'
@@ -599,6 +637,11 @@
     swipeEnabled, swipeLeftLayerId, swipeRightLayerId, swipePosition, toggleSwipe,
     sunSimEnabled, sunSimTime, toggleSunSim, setSunSimTime
   } = useAppState()
+
+
+  // ── Welcome splash ──────────────────────────────────────────────────────────
+  const showWelcome = ref(true)
+  function enterApp() { showWelcome.value = false }
 
 
   // ── Cesium viewer ref ───────────────────────────────────────────────────────
