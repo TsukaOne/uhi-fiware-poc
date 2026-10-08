@@ -493,8 +493,6 @@
       :swipeRightLayerId="swipeRightLayerId"
       :sunSimEnabled="sunSimEnabled"
       :sunSimTime="sunSimTime"
-      :uhiMin="uhiMin"
-      :uhiMax="uhiMax"
       :predictionOverlay="predictionOverlay"
       :sensorData="visibleSensors"
       :sensorsVisible="anySensorsVisible"
@@ -611,8 +609,6 @@
       :swipeEnabled="swipeEnabled"
       :swipeLeftLayerId="swipeLeftLayerId"
       :swipeRightLayerId="swipeRightLayerId"
-      :uhiMin="uhiMin"
-      :uhiMax="uhiMax"
       :predictionHistory="predictionHistory"
       :vlinderSensors="vlinderSensors"
       :scSensors="scSensors"
@@ -655,7 +651,7 @@
     // Composables
     import { useAppState }   from './App.js'
   import { ROOF_FUNCTIONS } from './composables/Cesium/useRoofFunctions.js'
-    import { orionApi }      from './services/orionApi.js'
+    import { predictionApi } from './services/predictionApi.js'
     import { useDraggable }  from './composables/App/useDraggable.js'
     import { useWorkflow }   from './composables/App/useWorkflow.js'
     import { useLayerInfo }  from './composables/App/useLayerInfo.js'
@@ -858,9 +854,9 @@
 
   async function fetchSensors() {
     try {
-      allSensors.value = await orionApi.getTemperatureSensors()
+      allSensors.value = await predictionApi.getSensors()
     } catch (err) {
-      console.warn('Sensor fetch from Orion failed:', err)
+      console.warn('Sensor fetch failed:', err)
     }
   }
 
@@ -874,23 +870,6 @@
     if (scVisible.value && allSensors.value.length === 0) fetchSensors()
   }
 
-
-  // ── UHI range data ─────────────────────────────────────────────────────────
-  const uhiMin = ref(null)
-  const uhiMax = ref(null)
-
-  async function fetchUhiRange() {
-    try {
-      const entity = await orionApi.getUhiEntity()
-      const range = entity?.valueRange?.value
-      if (range) {
-        uhiMin.value = range.min
-        uhiMax.value = range.max
-      }
-    } catch (err) {
-      console.warn('Failed to fetch UHI range from Orion:', err)
-    }
-  }
 
   // ── Toolbox: swipe, sun sim, mutual exclusion ───────────────────────────────
   const showSunSimPanel  = ref(false)
@@ -1000,7 +979,6 @@
     window.addEventListener('mousemove', onMouseMove)
     window.addEventListener('mouseup', stopDrag)
     document.addEventListener('click', onClickOutside)
-    fetchUhiRange()
     fetchSensors()
   })
 

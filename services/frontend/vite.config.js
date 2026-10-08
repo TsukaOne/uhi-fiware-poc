@@ -13,11 +13,6 @@ export default defineConfig({
         changeOrigin: true,
         rewrite: (path) => path.replace(/^\/prediction/, '')
       },
-      '/orion': {
-        target: 'http://localhost:1026',
-        changeOrigin: true,
-        rewrite: (path) => path.replace(/^\/orion/, '')
-      },
       '/geoserver': {
         target: 'http://localhost:8080',
         changeOrigin: true

@@ -8,7 +8,7 @@
  *
  * Usage:
  *   import { apiJSON, apiBlob } from '../services/api.js'
- *   const data = await apiJSON('/prediction/vlinder/t_base')
+ *   const data = await apiJSON('/prediction/sensors')
  *   const blob = await apiBlob('/prediction/predict/download', { method: 'POST', body: ... })
  */
 

@@ -1,5 +1,10 @@
 import { ref, reactive } from 'vue'
 
+// Value range of the published UHI heatmap (LST_pixel - LST_rural).
+// Must match uhi_min / uhi_max of data/models/xgb_uhi_latest.joblib.
+const UHI_MIN_CELSIUS = -16.3
+const UHI_MAX_CELSIUS = 22.6
+
 // ========================================
 // VIEWPORT & LAYER STATE MANAGEMENT
 // ========================================
@@ -40,14 +45,14 @@ export function useAppState() {
     {
       id: 'uhi_prediction',
       name: 'UHI Heat Risk',
-      description: 'Heat island prediction (0-1)',
+      description: 'Heat island intensity vs. rural reference (°C)',
       wmsLayer: 'uhi:uhi_prediction',
       visible: true,
       opacity: 0.7,
       category: 'uhi_maps',
       legend: {
-        min: { value: 0, color: '#2166ac', label: 'Cool' },
-        max: { value: 1, color: '#b2182b', label: 'Hot' }
+        min: { value: UHI_MIN_CELSIUS, color: '#2166ac', label: `Cool (${UHI_MIN_CELSIUS} °C)` },
+        max: { value: UHI_MAX_CELSIUS, color: '#b2182b', label: `Hot (+${UHI_MAX_CELSIUS} °C)` }
       }
     },
     

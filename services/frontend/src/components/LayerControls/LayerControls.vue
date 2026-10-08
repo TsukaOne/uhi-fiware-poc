@@ -89,11 +89,7 @@
                 </div>
                 <div class="legend" v-if="layer.legend && layer.visible">
                   <div class="legend-gradient" :style="getLegendStyle(layer.legend)"></div>
-                  <div class="legend-labels" v-if="uhiMin != null && uhiMax != null && layer.id === 'uhi_prediction'">
-                    <span>Low ({{ uhiMin.toFixed(1) }})</span>
-                    <span>High ({{ uhiMax.toFixed(1) }})</span>
-                  </div>
-                  <div class="legend-labels" v-else>
+                  <div class="legend-labels">
                     <span>{{ layer.legend.min.label }}</span>
                     <span>{{ layer.legend.max.label }}</span>
                   </div>
@@ -426,8 +422,6 @@
     swipeEnabled: { type: Boolean, default: false },
     swipeLeftLayerId: { type: String, default: null },
     swipeRightLayerId: { type: String, default: null },
-    uhiMin: { type: Number, default: null },
-    uhiMax: { type: Number, default: null },
     predictionHistory: { type: Array, default: () => [] },
     vlinderSensors: { type: Array, default: () => [] },
     scSensors: { type: Array, default: () => [] },

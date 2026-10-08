@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+from email.utils import parsedate_to_datetime
 from typing import Optional
 
 import httpx
@@ -98,7 +99,7 @@ class VlinderProvider(BaseSensorProvider):
             rain_intensity=_float_or_none(latest.get("rainIntensity")),
             latitude=meta.latitude if meta else None,
             longitude=meta.longitude if meta else None,
-            observed_at=latest.get("time", ""),
+            observed_at=_to_iso8601(latest.get("time", "")),
             status=latest.get("status", "Unknown"),
         )
 
@@ -153,6 +154,14 @@ class VlinderProvider(BaseSensorProvider):
         if meta.city:
             parts.append(f"— {meta.city}")
         return " ".join(parts)
+
+
+def _to_iso8601(rfc2822_date: str) -> str:
+    """Mooncake sends 'Thu, 08 Oct 2026 18:30:00 UTC'; SensorReading expects ISO 8601."""
+    try:
+        return parsedate_to_datetime(rfc2822_date).isoformat()
+    except (TypeError, ValueError):
+        return rfc2822_date
 
 
 def _float_or_none(val) -> Optional[float]:

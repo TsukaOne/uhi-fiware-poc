@@ -21,23 +21,20 @@ function toBackendLayer(frontendId) {
  *
  * Usage:
  *   import { predictionApi } from '../services/predictionApi.js'
- *   const data = await predictionApi.getPixelValue(lon, lat)
+ *   const sensors = await predictionApi.getSensors()
  */
 export const predictionApi = {
 
   /**
-   * POST /predict/pixel/value
-   * Fetch all layer values at a geographic point clicked on the map.
+   * GET /sensors
+   * Latest readings of the VLINDER and Sensors.community stations.
    *
-   * @param {number} lon
-   * @param {number} lat
-   * @returns {{ lon, lat, values: Object }}
+   * @returns {Promise<Array>} Flat sensor objects (station_id, temperature, latitude, …)
    */
-  getPixelValue: (lon, lat) =>
-    apiJSON(`${BASE}/predict/pixel/value`, {
-      method: 'POST',
-      body:   JSON.stringify({ lon, lat }),
-    }),
+  getSensors: async () => {
+    const { sensors } = await apiJSON(`${BASE}/sensors`)
+    return sensors
+  },
 
   /**
    * POST /predict/layer/stats
@@ -69,11 +66,12 @@ export const predictionApi = {
       body:   JSON.stringify({ geometry: geoJSON }),
     }),
 
-  /**   * POST /predict/zone
+  /**
+   * POST /predict/zone
    * Run the UHI prediction model over the selected zone.
    * Returns a base64-encoded PNG image + bounds + stats.
    *
-   * @param {Object} body - { geometry, t_base, objects[] }
+   * @param {Object} body - { geometry, objects[] }
    */
   predictZone: (body) =>
     apiJSON(`${BASE}/predict/zone`, {
