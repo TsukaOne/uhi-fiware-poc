@@ -184,9 +184,11 @@ flowchart TB
 
 ```
 uhi-fiware-poc/
-├── docker-compose.yml          # Orchestrates all 7 services
-├── env.example                 # Template for environment variables
-├── .env                        # Active config (git-ignored, copy from env.example)
+├── docker-compose.yml          # Orchestrates all 8 services (production posture)
+├── docker-compose.dev.yml      # Dev-only overlay: republishes ports on 127.0.0.1
+├── Caddyfile                   # Public reverse proxy (HTTPS, Let's Encrypt)
+├── .env.example                # Template for environment variables
+├── .env                        # Active config (git-ignored, copy from .env.example)
 │
 ├── services/
 │   ├── ingestion/              # Downloads orthophotos, computes NDVI/NDWI/LST/BuildingHeight
@@ -229,7 +231,7 @@ cd uhi-fiware-poc
 ### Step 2 — Configure environment variables
 
 ```bash
-cp env.example .env
+cp .env.example .env
 ```
 
 The default `.env` points to the Brussels 2024 UrbIS orthophotos. Edit if needed.
@@ -255,26 +257,49 @@ These files must be **GeoTIFF format**, projected in **EPSG:31370** (Belgian Lam
 
 ### Step 4 — Start all services
 
+**Production** — nothing is exposed to the host except Caddy. Every service talks
+to its neighbours over the internal `uhi-network` bridge, and the only way in is
+HTTPS on `${DOMAIN}`:
+
 ```bash
 docker compose up -d
 ```
 
-This starts 7 containers:
+**Local development** — the Vite dev server runs on your machine and needs to
+reach GeoServer, Orion and the prediction API. Add the dev overlay, which
+republishes those ports **bound to `127.0.0.1` only** (invisible from the LAN):
 
-| Service | Container | Port | Description |
-|---|---|---|---|
-| MongoDB | `uhi-mongo` | 27017 | Orion-LD database |
-| Orion-LD | `uhi-orion` | 1026 | NGSI-LD Context Broker |
-| GeoServer | `uhi-geoserver` | 8080 | WMS tile server |
-| Ingestion | `uhi-ingestion` | 8001 | Data ingestion pipeline |
-| Prediction | `uhi-prediction` | 8002 | UHI prediction engine + sensor sync |
-| GeoServer Sync | `uhi-geoserver-sync` | _(internal)_ | Auto-publishes layers to GeoServer |
-| Frontend | `uhi-frontend` | 3000 | CesiumJS 3D web viewer |
+```bash
+docker compose -f docker-compose.yml -f docker-compose.dev.yml up -d
+```
+
+This starts 8 containers:
+
+| Service | Container | Internal port | Host port (dev overlay only) | Description |
+|---|---|---|---|---|
+| MongoDB | `uhi-mongo` | 27017 | _(none)_ | Orion-LD database |
+| Orion-LD | `uhi-orion` | 1026 | `127.0.0.1:1026` | NGSI-LD Context Broker |
+| GeoServer | `uhi-geoserver` | 8080 | `127.0.0.1:8080` | WMS tile server |
+| Ingestion | `uhi-ingestion` | 8000 | `127.0.0.1:8001` | Data ingestion pipeline |
+| Prediction | `uhi-prediction` | 8000 | `127.0.0.1:8002` | UHI prediction engine + sensor sync |
+| GeoServer Sync | `uhi-geoserver-sync` | 8000 | _(none)_ | Auto-publishes layers to GeoServer |
+| Frontend | `uhi-frontend` | 80 | `127.0.0.1:3000` | CesiumJS 3D web viewer (nginx) |
+| Caddy | `uhi-caddy` | 80 / 443 | **`80`, `443`** | Public reverse proxy, HTTPS |
+
+> The `curl http://localhost:800x/...` commands in the steps below assume the dev
+> overlay is running. In production, reach the same endpoints from inside the
+> network, e.g. `docker compose exec prediction curl http://localhost:8000/status`.
 
 Verify all containers are healthy:
 
 ```bash
 docker compose ps
+```
+
+Confirm production publishes nothing beyond Caddy:
+
+```bash
+docker compose config | grep published    # only 80 and 443
 ```
 
 ### Step 5 — Trigger the ingestion pipeline
@@ -337,7 +362,11 @@ This creates the `UHIHeatMap` entity in Orion, which automatically triggers GeoS
 
 ### Step 8 — View the results
 
-Open [http://localhost:3000](http://localhost:3000) in your browser.
+- **Production:** open `https://${DOMAIN}` — Caddy terminates TLS and proxies to the frontend.
+- **Dev overlay:** open [http://localhost:3000](http://localhost:3000) for the production build served by nginx.
+- **Vite dev server:** `cd services/frontend && npm run dev`, then [http://localhost:5173](http://localhost:5173).
+  The dev overlay must be running, since Vite proxies `/geoserver`, `/orion` and
+  `/prediction` to those `127.0.0.1` ports.
 
 The CesiumJS 3D viewer provides:
 - Toggle-able WMS layers (RGB, NIR, NDVI, NDWI, LST, UHI Prediction, ...)
@@ -347,6 +376,7 @@ The CesiumJS 3D viewer provides:
 - Object impact simulation (trees, buildings, solar panels, ...)
 - Real-time sensor markers (VLINDER + Sensors.community)
 - Sun position simulation
+- Free-flight mode: fly over the city with the arrow keys, steer with the mouse
 
 ---
 
@@ -395,7 +425,7 @@ sequenceDiagram
     Note over PRED: Background: periodic sensor sync
     PRED->>ORION: Upsert TemperatureSensor entities
 
-    U->>FE: Open http://localhost:3000
+    U->>FE: Open https://${DOMAIN}
     FE->>GS: WMS GetMap (all layers)
     FE->>PRED: GET /sensors (live markers)
     Note over FE: Interactive 3D globe with<br/>all layers + sensor data

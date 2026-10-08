@@ -278,6 +278,20 @@
                   </div>
                 </Transition>
               </div>
+
+              <div class="layer-item" :class="{ active: roofFunctionsVisible }">
+                <div class="layer-header">
+                  <label class="checkbox-wrapper">
+                    <input type="checkbox" :checked="roofFunctionsVisible" @change="$emit('toggle-roof-functions')" />
+                    <span class="checkmark"></span>
+                    <span class="layer-name">Multiroof functions</span>
+                  </label>
+                  <button class="layer-about-btn" :class="{ active: expandedLayerAbout['roofs'] }" @click.prevent.stop="expandedLayerAbout['roofs'] = !expandedLayerAbout['roofs']" title="About Multiroof functions">
+                    <i class="fas fa-question-circle"></i>
+                  </button>
+                </div>
+                <p class="layer-description">Colour code the seven rooftop functions</p>
+              </div>
             </div>
           </div>
         </Transition>
@@ -408,6 +422,7 @@
     activeLayers: { type: Array, default: () => [] },
     buildingVisible: { type: Boolean, default: false },
     treeVisible: { type: Boolean, default: false },
+    roofFunctionsVisible: { type: Boolean, default: false },
     swipeEnabled: { type: Boolean, default: false },
     swipeLeftLayerId: { type: String, default: null },
     swipeRightLayerId: { type: String, default: null },
@@ -421,7 +436,7 @@
   })
 
   defineEmits([
-    'toggle-layer', 'set-opacity', 'toggle-buildings', 'toggle-trees',
+    'toggle-layer', 'set-opacity', 'toggle-buildings', 'toggle-trees', 'toggle-roof-functions',
     'set-swipe-left', 'set-swipe-right',
     'layer-metadata', 'layer-download',
     'toggle-prediction-history', 'toggle-vlinder', 'toggle-sensors-community', 'refresh-sensors',
@@ -519,6 +534,11 @@
       title: '3D Trees',
       description: 'Interactive 3D tree models derived from LiDAR point cloud data.',
       details: 'Urban tree canopy is one of the most effective UHI mitigation strategies. Trees provide cooling through shade (reducing surface heating) and evapotranspiration (releasing water vapor that cools the air). This layer shows the spatial distribution of tree coverage.',
+    },
+    roofs: {
+      title: 'Multiroof rooftop functions',
+      description: 'Tints the roof surfaces of the building tileset with the seven Multiroof function colours. Only roofs are coloured — walls and ground keep their original appearance — and a share of roofs is deliberately left untinted.',
+      details: 'The tileset carries no Multiroof survey data. Functions are assigned from a hash of each building id, so the colours are stable and reproducible but entirely fictional. Use this to demonstrate the colour code, never to read an actual rooftop programme.',
     },
   }
 

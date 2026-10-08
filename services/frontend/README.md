@@ -76,14 +76,23 @@ flowchart TB
 
 ### Local development (without Docker)
 
+The backend still has to run in Docker, with the dev overlay so its ports are
+reachable from the host:
+
 ```bash
+# from the repo root
+docker compose -f docker-compose.yml -f docker-compose.dev.yml up -d
+
 cd services/frontend
 npm install
 npm run dev
 # -> http://localhost:5173
 ```
 
-Note: for local dev, the app auto-detects the port and uses `http://localhost:8080/geoserver` directly.
+The app always calls same-origin paths (`/geoserver`, `/orion`, `/prediction`).
+In dev those are handled by the Vite proxy declared in `vite.config.js`; in
+production the same paths are served by nginx (`nginx.conf`). GeoServer runs with
+`CORS_ENABLED=false`, so going through a proxy is not optional.
 
 ### Production build
 

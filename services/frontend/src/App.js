@@ -5,7 +5,7 @@ import { ref, reactive } from 'vue'
 // ========================================
 
 export function useAppState() {
-  // Navbar state
+  // Navbar state — '2D' | '3D' | 'FLY' (free flight over the city)
   const viewMode = ref('3D')
   const showLayers = ref(false)
   const showToolbox = ref(false)
@@ -13,6 +13,9 @@ export function useAppState() {
   // 3D Tileset state
   const buildingVisible = ref(true)
   const treeVisible = ref(false)
+
+  // Multiroof rooftop colour coding — illustrative overlay on the building roofs
+  const roofFunctionsVisible = ref(false)
 
   // Drawing state
   const drawingMode = ref(null) // 'polygon' | 'boundingBox' | null
@@ -191,6 +194,11 @@ export function useAppState() {
     viewMode.value = '3D'
   }
 
+  /** Free-flight mode: fly over Brussels with the arrow keys, steer with the mouse. */
+  function setFly() {
+    viewMode.value = 'FLY'
+  }
+
   function toggleLayersPanel() {
     showLayers.value = !showLayers.value
   }
@@ -222,6 +230,15 @@ export function useAppState() {
 
   function toggleBuildings() {
     buildingVisible.value = !buildingVisible.value
+  }
+
+  /**
+   * Multiroof colour coding only reads on the roofs, so turning it on brings the
+   * building tileset back if the user had hidden it.
+   */
+  function toggleRoofFunctions() {
+    roofFunctionsVisible.value = !roofFunctionsVisible.value
+    if (roofFunctionsVisible.value) buildingVisible.value = true
   }
 
   function toggleTrees() {
@@ -303,16 +320,19 @@ export function useAppState() {
     activeLayers,
     buildingVisible,
     treeVisible,
+    roofFunctionsVisible,
     drawingMode,
     showPredictMenu,
     drawnGeometries,
     set2D,
     set3D,
+    setFly,
     toggleLayersPanel,
     toggleLayer,
     setOpacity,
     toggleBuildings,
     toggleTrees,
+    toggleRoofFunctions,
     toggleToolbox,
     togglePredictMenu,
     startDrawingPolygon,

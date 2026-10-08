@@ -1,9 +1,20 @@
 import * as Cesium from 'cesium'
 
-// GeoServer WMS endpoint — resolved based on dev vs. prod port
-const GEOSERVER_URL = window.location.port === '3000'
-  ? '/geoserver'
-  : 'http://localhost:8080/geoserver'
+// GeoServer WMS endpoint
+const GEOSERVER_URL = '/geoserver'
+
+// Bounding box of the Brussels-Capital Region.
+// Without it Cesium requests WMS tiles across the whole globe, most of which
+// GeoServer answers with an empty image — hundreds of useless round-trips.
+const BRUSSELS_EXTENT = [4.20, 50.75, 4.50, 50.92]  // west, south, east, north
+
+// Source rasters are 10 m/px (see LAYER_RESOLUTION_M in PredictionPanel).
+// Level 17 is already ~1 m/px — beyond that we would only magnify pixels.
+const WMS_MIN_LEVEL = 10
+const WMS_MAX_LEVEL = 17
+
+// 512px tiles instead of the 256px default: ~4x fewer requests for the same area
+const WMS_TILE_SIZE = 512
 
 /**
  * useWmsLayers — Manages WMS imagery layers and the swipe/split-view feature.
@@ -23,6 +34,8 @@ export function useWmsLayers({ getViewer, getLayerConfigs }) {
 
   /** Map<layerId, Cesium.ImageryLayer> — tracks every loaded WMS layer */
   const wmsLayers = new Map()
+
+  const errorReported = new Set()
 
   /** Whether swipe mode is currently active (used to guard one-time pre-swipe snapshot) */
   let swipeActive = false
@@ -77,7 +90,22 @@ export function useWmsLayers({ getViewer, getLayerConfigs }) {
         crs: 'EPSG:4326'
       },
       enablePickFeatures: true,
-      credit: 'UHI Brussels - FARI'
+      credit: 'UHI Brussels - FARI',
+      rectangle: Cesium.Rectangle.fromDegrees(...BRUSSELS_EXTENT),
+      minimumLevel: WMS_MIN_LEVEL,
+      maximumLevel: WMS_MAX_LEVEL,
+      tileWidth: WMS_TILE_SIZE,
+      tileHeight: WMS_TILE_SIZE,
+    })
+
+    // One warning per layer, not per failed tile
+    provider.errorEvent.addEventListener((error) => {
+      if (errorReported.has(layerConfig.id)) return
+      errorReported.add(layerConfig.id)
+      console.warn(
+        `WMS layer "${layerConfig.id}" is failing to load tiles — is GeoServer reachable?`,
+        error?.message ?? error
+      )
     })
 
     const imageryLayer = viewer.imageryLayers.addImageryProvider(provider)
@@ -96,6 +124,7 @@ export function useWmsLayers({ getViewer, getLayerConfigs }) {
 
     viewer.imageryLayers.remove(wmsLayers.get(layerId))
     wmsLayers.delete(layerId)
+    errorReported.delete(layerId)
   }
 
   /**
@@ -195,6 +224,7 @@ export function useWmsLayers({ getViewer, getLayerConfigs }) {
     if (!viewer) return
     wmsLayers.forEach(layer => viewer.imageryLayers.remove(layer))
     wmsLayers.clear()
+    errorReported.clear()
   }
 
   return {

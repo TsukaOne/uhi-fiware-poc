@@ -11,6 +11,7 @@
     viewMode: { type: String, required: true },
     buildingVisible: { type: Boolean, default: true },
     treeVisible: { type: Boolean, default: false },
+    roofFunctionsVisible: { type: Boolean, default: false },
     drawingMode: { type: String, default: null },
     swipeEnabled: { type: Boolean, default: false },
     swipePosition: { type: Number, default: 0.5 },
@@ -25,14 +26,17 @@
     sensorsVisible: { type: Boolean, default: false }
   })
 
-  const emit = defineEmits(['geometry-drawn', 'drawing-active', 'sensor-click'])
+  const emit = defineEmits(['geometry-drawn', 'drawing-active', 'sensor-click', 'exit-fly-mode'])
 
-  const { cesiumContainer, getViewer, flyTo, undoLastPoint } = useCesiumViewer(props, emit)
+  const {
+    cesiumContainer, getViewer, flyTo, undoLastPoint, getFlyTelemetry
+  } = useCesiumViewer(props, emit)
 
   defineExpose({
     getViewer,
     flyTo,
-    undoLastPoint
+    undoLastPoint,
+    getFlyTelemetry
   })
 </script>
 

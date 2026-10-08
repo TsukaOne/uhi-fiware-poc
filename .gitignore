@@ -16,6 +16,8 @@ config/styles/
 # Environment secrets
 # ========================
 .env
+.env.*
+!.env.example
 
 # ========================
 # Docker

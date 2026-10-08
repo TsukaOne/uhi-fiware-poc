@@ -1,0 +1,28 @@
+# ============================================================================
+# NEVER USE IN PRODUCTION: this file is for development only.
+#
+#      docker compose -f docker-compose.yml -f docker-compose.dev.yml up -d
+#
+#  Un simple `docker compose up -d` conserve la configuration de production.
+# ============================================================================
+
+services:
+  geoserver:
+    ports:
+      - "127.0.0.1:8080:8080"   # cible du proxy Vite /geoserver
+
+  orion:
+    ports:
+      - "127.0.0.1:1026:1026"   # cible du proxy Vite /orion
+
+  prediction:
+    ports:
+      - "127.0.0.1:8002:8000"   # cible du proxy Vite /prediction
+
+  ingestion:
+    ports:
+      - "127.0.0.1:8001:8000"   # API d'ingestion (debug manuel)
+
+  frontend:
+    ports:
+      - "127.0.0.1:3000:80"     # build de prod servi par nginx, pour comparer

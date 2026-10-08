@@ -13,8 +13,15 @@ import * as Cesium from 'cesium'
  * @param {() => Cesium.Cesium3DTileset}   options.getBuildingTileset - Returns the building tileset (may be null)
  * @param {() => Cesium.Cesium3DTileset}   options.getTreeTileset     - Returns the tree tileset (may be null)
  * @param {Function}                       options.onSunSimRestore     - Callback to re-apply sun simulation in 3D
+ * @param {Function}                       options.onRestoreTilesets   - Callback to re-apply tileset visibility/LOD in 3D
  */
-export function useCameraControls({ getViewer, getBuildingTileset, getTreeTileset, onSunSimRestore }) {
+export function useCameraControls({
+  getViewer,
+  getBuildingTileset,
+  getTreeTileset,
+  onSunSimRestore,
+  onRestoreTilesets,
+}) {
 
   // Custom pan handler installed in 2D mode
   let manualPanHandler = null
@@ -149,6 +156,15 @@ export function useCameraControls({ getViewer, getBuildingTileset, getTreeTilese
 
     viewer.scene.globe.enableLighting = sunSimEnabled
     viewer.scene.skyAtmosphere.show = true
+
+    // 2D mode turns fog off; 3D wants it back — it drives the tilesets'
+    // dynamicScreenSpaceError, not just the look of the horizon.
+    viewer.scene.fog.enabled = true
+
+    // 2D mode force-hides both tilesets; bring them back per the user's choices
+    if (onRestoreTilesets) {
+      onRestoreTilesets()
+    }
 
     // Re-apply sun simulation state after switching to 3D
     if (sunSimEnabled) {

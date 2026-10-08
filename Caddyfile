@@ -1,0 +1,18 @@
+# ============================================================================
+#  Caddyfile — Public reverse proxy configuration (HTTPS auto-renewal)
+#
+# ============================================================================
+
+# Global options for Caddy
+{
+	email {$TLS_EMAIL}
+}
+#Caddy will automatically obtain a valid Let's Encrypt certificate
+{$DOMAIN} {
+	encode gzip zstd
+
+	header Strict-Transport-Security "max-age=31536000"
+	header -Server
+
+	reverse_proxy frontend:80
+}

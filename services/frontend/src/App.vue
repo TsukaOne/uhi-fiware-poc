@@ -57,6 +57,15 @@
 
         <button
           class="nav-btn"
+          :class="{ active: viewMode === 'FLY' }"
+          @click="setFly"
+          title="Fly over Brussels"
+        >
+          <i class="fas fa-paper-plane"></i>
+        </button>
+
+        <button
+          class="nav-btn"
           :class="{ active: showLayers }"
           @click="toggleLayersPanel"
           title="Toggle Layers Panel"
@@ -476,6 +485,7 @@
       :viewMode="viewMode"
       :buildingVisible="buildingVisible"
       :treeVisible="treeVisible"
+      :roofFunctionsVisible="roofFunctionsVisible"
       :drawingMode="drawingMode"
       :swipeEnabled="swipeEnabled"
       :swipePosition="swipePosition"
@@ -491,7 +501,29 @@
       @geometry-drawn="onGeometryDrawnRouter"
       @drawing-active="onDrawingActive"
       @sensor-click="onSensorClick"
+      @exit-fly-mode="set3D"
     />
+
+    <!-- FLY MODE HUD -->
+    <Transition name="pixel-fade">
+      <div v-if="viewMode === 'FLY'" class="fly-hud">
+        <div class="fly-hud-keys">
+          <span><kbd>↑</kbd><kbd>↓</kbd> forward / back</span>
+          <span><kbd>←</kbd><kbd>→</kbd> strafe</span>
+          <span><kbd>Space</kbd><kbd>Ctrl</kbd> up / down</span>
+          <span><kbd>Shift</kbd> boost</span>
+          <span><kbd>Wheel</kbd> speed</span>
+        </div>
+        <div class="fly-hud-readout">
+          <span><i class="fas fa-mountain"></i> {{ Math.round(flyTelemetry.altitude) }} m</span>
+          <span><i class="fas fa-gauge-high"></i> {{ Math.round(flyTelemetry.speed) }} m/s</span>
+          <span><i class="fas fa-compass"></i> {{ Math.round(flyTelemetry.heading) }}°</span>
+        </div>
+        <button class="fly-hud-exit" @click="set3D" title="Exit fly mode (Esc)">
+          <i class="fas fa-xmark"></i> Exit
+        </button>
+      </div>
+    </Transition>
 
     <!-- SENSOR INFO POPUP (click on sensor dot) -->
     <Transition name="pixel-fade">
@@ -575,6 +607,7 @@
       :activeLayers="activeLayers"
       :buildingVisible="buildingVisible"
       :treeVisible="treeVisible"
+      :roofFunctionsVisible="roofFunctionsVisible"
       :swipeEnabled="swipeEnabled"
       :swipeLeftLayerId="swipeLeftLayerId"
       :swipeRightLayerId="swipeRightLayerId"
@@ -589,6 +622,7 @@
       @set-opacity="setOpacity"
       @toggle-buildings="toggleBuildings"
       @toggle-trees="toggleTrees"
+      @toggle-roof-functions="toggleRoofFunctions"
       @set-swipe-left="onSetSwipeLeft"
       @set-swipe-right="onSetSwipeRight"
       @layer-metadata="onLayerMetadata"
@@ -620,6 +654,7 @@
 
     // Composables
     import { useAppState }   from './App.js'
+  import { ROOF_FUNCTIONS } from './composables/Cesium/useRoofFunctions.js'
     import { orionApi }      from './services/orionApi.js'
     import { useDraggable }  from './composables/App/useDraggable.js'
     import { useWorkflow }   from './composables/App/useWorkflow.js'
@@ -630,9 +665,10 @@
   // ── Global app state (view mode, layers, drawing, swipe, sun sim) ──────────
   const {
     viewMode, showLayers, layers, activeLayers, buildingVisible, treeVisible,
+    roofFunctionsVisible,
     showToolbox, drawingMode, showPredictMenu, drawnGeometries,
-    set2D, set3D, toggleLayersPanel, toggleLayer, setOpacity,
-    toggleBuildings, toggleTrees, toggleToolbox, togglePredictMenu,
+    set2D, set3D, setFly, toggleLayersPanel, toggleLayer, setOpacity,
+    toggleBuildings, toggleTrees, toggleRoofFunctions, toggleToolbox, togglePredictMenu,
     startDrawingPolygon, startDrawingBoundingBox, stopDrawing, addGeometry,
     swipeEnabled, swipeLeftLayerId, swipeRightLayerId, swipePosition, toggleSwipe,
     sunSimEnabled, sunSimTime, toggleSunSim, setSunSimTime
@@ -651,6 +687,27 @@
   const cesiumViewerInstance = computed(() =>
     cesiumViewerRef.value?.getViewer?.() ?? null
   )
+
+
+  // ── Fly mode HUD ────────────────────────────────────────────────────────────
+  // The camera changes every frame while flying; polling a few times a second
+  // is plenty for a readout and avoids re-rendering Vue on the render loop.
+  const flyTelemetry = ref({ altitude: 0, speed: 0, heading: 0 })
+  let flyTelemetryTimer = null
+
+  watch(viewMode, (mode) => {
+    clearInterval(flyTelemetryTimer)
+    flyTelemetryTimer = null
+
+    if (mode !== 'FLY') return
+
+    flyTelemetryTimer = setInterval(() => {
+      flyTelemetry.value = cesiumViewerRef.value?.getFlyTelemetry?.()
+        ?? { altitude: 0, speed: 0, heading: 0 }
+    }, 200)
+  })
+
+  onBeforeUnmount(() => clearInterval(flyTelemetryTimer))
 
 
   // ── Draggable floating panels ───────────────────────────────────────────────

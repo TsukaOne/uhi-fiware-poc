@@ -12,6 +12,9 @@ RUN npm install
 # Copy source code
 COPY . .
 
+ARG VITE_CESIUM_ION_TOKEN
+ENV VITE_CESIUM_ION_TOKEN=$VITE_CESIUM_ION_TOKEN
+
 # Build for production
 RUN npm run build
 

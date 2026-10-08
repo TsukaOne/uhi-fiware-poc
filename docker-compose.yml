@@ -1,14 +1,23 @@
+
+# Logging configuration for all services
+x-logging: &default-logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "3"
+
 services:
   # MongoDB for Orion-LD (using 5.0 for compatibility with Orion-LD 1.6.0)
   mongo:
     image: mongo:5.0
     container_name: uhi-mongo
-    ports:
-      - "27017:27017"
+    restart: unless-stopped
     volumes:
       - mongo_data:/data/db
     networks:
       - uhi-network
+    mem_limit: 2g
+    logging: *default-logging
     healthcheck:
       test: ["CMD", "mongo", "--eval", "db.adminCommand('ping')"]
       interval: 10s
@@ -19,17 +28,18 @@ services:
   orion:
     image: fiware/orion-ld:1.6.0
     container_name: uhi-orion
-    ports:
-      - "1026:1026"
+    restart: unless-stopped
     environment:
       - ORIONLD_MONGO_HOST=mongo
       - ORIONLD_MONGO_DB=orionld
-      - ORIONLD_LOG_LEVEL=DEBUG
+      - ORIONLD_LOG_LEVEL=WARN   
     depends_on:
       mongo:
         condition: service_healthy
     networks:
       - uhi-network
+    mem_limit: 1g
+    logging: *default-logging
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:1026/version"]
       interval: 10s
@@ -42,8 +52,7 @@ services:
       context: ./services/ingestion
       dockerfile: Dockerfile
     container_name: uhi-ingestion
-    ports:
-      - "8001:8000"
+    restart: unless-stopped
     environment:
       - ORION_URL=http://orion:1026
       - DATA_RAW_PATH=/data/raw
@@ -56,21 +65,22 @@ services:
     volumes:
       - ./data/raw:/data/raw
       - ./data/processed:/data/processed
-      - ./config/geoserver:/opt/geoserver_data/workspaces/uhi 
+      - ./config/geoserver:/opt/geoserver_data/workspaces/uhi
     depends_on:
       orion:
         condition: service_healthy
     networks:
       - uhi-network
+    mem_limit: 2g
+    logging: *default-logging
 
-  # UHI Prediction Service
+  # Data Prediction Service (XGBoost model)
   prediction:
     build:
       context: ./services/prediction
       dockerfile: Dockerfile
     container_name: uhi-prediction
-    ports:
-      - "8002:8000"
+    restart: unless-stopped
     environment:
       - ORION_URL=http://orion:1026
       - DATA_PROCESSED_PATH=/data/processed
@@ -89,7 +99,7 @@ services:
       - TRAINING_N_ESTIMATORS=500
       - TRAINING_MAX_DEPTH=8
       - TRAINING_LEARNING_RATE=0.05
-      - TRAINING_USE_GPU=true
+      - TRAINING_USE_GPU=false 
       # Model and cache storage paths
       - MODEL_PATH=/data/models
       - CACHE_PATH=/data/cache
@@ -102,6 +112,10 @@ services:
         condition: service_healthy
     networks:
       - uhi-network
+    mem_limit: 4g
+    cpus: "1.5"        
+    pids_limit: 256
+    logging: *default-logging
 
   # GeoServer Sync – keeps GeoServer layers in sync with Orion entities
   geoserver-sync:
@@ -109,11 +123,12 @@ services:
       context: ./services/geoserver-sync
       dockerfile: Dockerfile
     container_name: uhi-geoserver-sync
+    restart: unless-stopped
     environment:
       - ORION_URL=http://orion:1026
       - GEOSERVER_URL=http://geoserver:8080/geoserver
-      - GEOSERVER_USER=admin
-      - GEOSERVER_PASSWORD=geoserver
+      - GEOSERVER_USER=uhi_admin
+      - GEOSERVER_PASSWORD=${GEOSERVER_ADMIN_PASSWORD}   
       - GEOSERVER_WORKSPACE=uhi
       - SELF_URL=http://geoserver-sync:8000
       # Path mapping: container path → GeoServer internal path
@@ -126,40 +141,69 @@ services:
         condition: service_started
     networks:
       - uhi-network
+    mem_limit: 512m
+    logging: *default-logging
 
   # GeoServer for visualization
   geoserver:
-    image: docker.osgeo.org/geoserver:2.24.2
+    image: docker.osgeo.org/geoserver:2.24.4   # 2.24.2 → 2.24.4 : corrige la RCE CVE-2024-36401
     container_name: uhi-geoserver
-    ports:
-      - "8080:8080"
+    restart: unless-stopped
     environment:
       - SKIP_DEMO_DATA=true
       - ROOT_WEBAPP_REDIRECT=true
-      - CORS_ENABLED=true
-      - CORS_ALLOWED_ORIGINS=*
-      - CORS_ALLOWED_METHODS=GET,POST,PUT,DELETE,HEAD,OPTIONS
-      - CORS_ALLOWED_HEADERS=*
+      # Admin account
+      - GEOSERVER_ADMIN_USER=uhi_admin
+      - GEOSERVER_ADMIN_PASSWORD=${GEOSERVER_ADMIN_PASSWORD}   # depuis .env (gitignored)
+      # CORS 
+      - CORS_ENABLED=false
     volumes:
-      - ./data/processed:/opt/geoserver_data/data/uhi_processed
-      - ./data/raw:/opt/geoserver_data/data/uhi_raw
+      - ./data/processed:/opt/geoserver_data/data/uhi_processed:ro
+      - ./data/raw:/opt/geoserver_data/data/uhi_raw:ro
       - ./config/geoserver:/opt/geoserver_data/workspaces/uhi
     networks:
       - uhi-network
+    mem_limit: 4g
+    logging: *default-logging
 
-  # Frontend - Cesium + Vue.js viewer
+  # Frontend -  Cesium + Vue.js Viewer
   frontend:
     build:
       context: ./services/frontend
       dockerfile: Dockerfile
+      args:
+        # Le token Cesium DOIT être injecté au build, sinon la 3D casse en prod.
+        VITE_CESIUM_ION_TOKEN: ${VITE_CESIUM_ION_TOKEN}
     container_name: uhi-frontend
-    ports:
-      - "3000:80"
+    restart: unless-stopped
     depends_on:
       - geoserver
       - orion
     networks:
       - uhi-network
+    mem_limit: 256m
+    logging: *default-logging
+  # Caddy reverse proxy for HTTPS and ACME certificate management
+  caddy:
+    image: caddy:2-alpine
+    container_name: uhi-caddy
+    restart: unless-stopped
+    ports:
+      - "80:80"     # necessary for ACME certificate renewal + redirection to 443
+      - "443:443"   # HTTPS traffic
+    environment:
+      - DOMAIN=${DOMAIN}
+      - TLS_EMAIL=${TLS_EMAIL}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data       # stores certificates (to keep between restarts!)
+      - caddy_config:/config
+    depends_on:
+      - frontend
+    networks:
+      - uhi-network
+    mem_limit: 256m
+    logging: *default-logging
 
 networks:
   uhi-network:
@@ -167,4 +211,5 @@ networks:
 
 volumes:
   mongo_data:
-
+  caddy_data:
+  caddy_config:
