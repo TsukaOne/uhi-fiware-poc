@@ -1,5 +1,5 @@
 """
-Zone Prediction Router — zone prediction, stats, pixel query, and download endpoints.
+Zone Prediction Router — zone prediction, stats, and download endpoints.
 """
 from __future__ import annotations
 
@@ -18,9 +18,12 @@ from rasterio.warp import transform_bounds
 from rasterio.windows import from_bounds
 
 from algorithm.application.zone_predictor import ZonePredictor
+from algorithm.config import settings
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
+
+UHI_LAYER = "uhi"
 
 
 # ── Request / Response schemas ────────────────────────────────────────────────
@@ -99,6 +102,13 @@ class ZoneStatsResponse(BaseModel):
 def _get_zone_predictor() -> ZonePredictor:
     from main import zone_predictor
     return zone_predictor
+
+
+def find_layer_path(layer: str) -> Path:
+    available_paths = {**settings.layer_paths, UHI_LAYER: settings.uhi_heatmap_path}
+    if layer not in available_paths:
+        raise HTTPException(422, f"Unknown layer '{layer}'. Available: {list(available_paths)}")
+    return available_paths[layer]
 
 
 # ── Endpoint ──────────────────────────────────────────────────────────────────
@@ -199,31 +209,10 @@ async def layer_stats(request: SingleLayerStatsRequest):
     Decodes uint8 COG encoding to real physical float32 values using LayerDecoder.
     Optionally clips to a GeoJSON geometry (Polygon).
     """
-    from algorithm.infrastructure.layer_resolver import LayerResolver
-    from algorithm.config import Settings
     from algorithm.domain.layer_decoder import LayerDecoder, LAYER_SPECS
 
     layer = request.layer
-    resolver: LayerResolver = _get_layer_resolver()
-    settings: Settings = _get_settings()
-
-    # Resolve file path
-    if layer == "uhi":
-        file_path = Path(settings.output_path) / "uhi_xgb_heatmap_brussels_2024.tif"
-        if not file_path.exists():
-            raise HTTPException(404, "UHI prediction output not found.")
-    else:
-        entity_ids = settings.all_layer_entity_ids
-        if layer not in entity_ids:
-            raise HTTPException(
-                422,
-                f"Unknown layer '{layer}'. Available: {list(entity_ids.keys()) + ['uhi']}",
-            )
-        try:
-            paths = await resolver.resolve_required({layer: entity_ids[layer]})
-            file_path = paths[layer]
-        except Exception as e:
-            raise HTTPException(503, f"Cannot resolve layer: {e}")
+    file_path = find_layer_path(layer)
 
     # Read raster (optionally clipped) and decode to physical values
     try:
@@ -280,16 +269,6 @@ async def layer_stats(request: SingleLayerStatsRequest):
 # ── Map download ─────────────────────────────────────────────────────────────
 
 
-def _get_layer_resolver():
-    from main import layer_resolver
-    return layer_resolver
-
-
-def _get_settings():
-    from main import settings
-    return settings
-
-
 class DownloadRequest(BaseModel):
     layer: str = Field(
         ...,
@@ -302,40 +281,14 @@ class DownloadRequest(BaseModel):
 
 
 @router.post("/predict/download")
-async def download_layer(
-    request: DownloadRequest,
-    predictor: ZonePredictor = Depends(_get_zone_predictor),
-):
+async def download_layer(request: DownloadRequest):
     """
     Download a GeoTIFF layer — full extent or cropped to a drawn zone.
     Returns the raw raster file (not decoded, original COG encoding).
     """
     import asyncio
-    from algorithm.infrastructure.layer_resolver import LayerResolver
-    from algorithm.config import Settings
 
-    resolver: LayerResolver = _get_layer_resolver()
-    settings: Settings = _get_settings()
-
-    # Resolve the file path
-    if request.layer == "uhi":
-        # UHI prediction output
-        uhi_path = Path(settings.output_path) / "uhi_xgb_heatmap_brussels_2024.tif"
-        if not uhi_path.exists():
-            raise HTTPException(404, "UHI prediction output not found. Run full-map prediction first.")
-        file_path = uhi_path
-    else:
-        entity_ids = settings.all_layer_entity_ids
-        if request.layer not in entity_ids:
-            raise HTTPException(
-                422,
-                f"Unknown layer '{request.layer}'. Available: {list(entity_ids.keys())}",
-            )
-        try:
-            paths = await resolver.resolve_required({request.layer: entity_ids[request.layer]})
-            file_path = paths[request.layer]
-        except Exception as e:
-            raise HTTPException(503, f"Cannot resolve layer: {e}")
+    file_path = find_layer_path(request.layer)
 
     # If no geometry, stream the full file
     if request.geometry is None:

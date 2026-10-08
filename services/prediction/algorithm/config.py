@@ -10,6 +10,21 @@ from pathlib import Path
 from pydantic import Field
 from pydantic_settings import BaseSettings
 
+LAYER_FILES = {
+    "ndvi": "ndvi_brussels_2024.tif",
+    "ndwi": "ndwi_brussels_2024.tif",
+    "ndbi": "ndbi_brussels_2024.tif",
+    "dtm": "dtm_brussels_2021.tif",
+    "dsm": "dsm_brussels_2024.tif",
+    "building_height": "building_height_brussels.tif",
+    "imperviousness": "imperviousness_brussels_2024.tif",
+    "albedo": "albedo_brussels_2024.tif",
+    "lst": "lst_cog_2024.tif",
+}
+UHI_HEATMAP_FILE = "uhi_xgb_heatmap_brussels_2024.tif"
+MODEL_FILE = "xgb_uhi_latest.joblib"
+
+
 class Settings(BaseSettings):
     """─
     All service settings resolved from environment variables at startup.
@@ -24,47 +39,9 @@ class Settings(BaseSettings):
         alias="NGSI_LD_CONTEXT",
     )
 
-    # ── File paths ────────────────────────────────────────────────────
-    output_path: Path = Field(default=Path("/data/processed"), alias="DATA_PROCESSED_PATH")
-    model_path: Path = Field(default=Path("/data/models"), alias="MODEL_PATH")
-
-    # ── Input entity IDs ──────────────────────────────────────────────
-    ndvi_entity_id: str = Field(
-        default="urn:ngsi-ld:GeoSpatialLayer:NDVI:brussels:2024",
-        alias="NDVI_ENTITY_ID",
-    )
-    ndwi_entity_id: str = Field(
-        default="urn:ngsi-ld:GeoSpatialLayer:NDWI:brussels:2024",
-        alias="NDWI_ENTITY_ID",
-    )
-    dtm_entity_id: str = Field(
-        default="urn:ngsi-ld:GeoSpatialLayer:DTM:brussels:2024",
-        alias="DTM_ENTITY_ID",
-    )
-    building_height_entity_id: str = Field(
-        default="urn:ngsi-ld:GeoSpatialLayer:BuildingHeight:brussels:2024",
-        alias="BUILDING_HEIGHT_ENTITY_ID",
-    )
-    lst_entity_id: str = Field(
-        default="urn:ngsi-ld:GeoSpatialLayer:LST:brussels:2024",
-        alias="LST_ENTITY_ID",
-    )
-    dsm_entity_id: str = Field(
-        default="urn:ngsi-ld:GeoSpatialLayer:DSM:brussels:2024",
-        alias="DSM_ENTITY_ID",
-    )
-    imperviousness_entity_id: str = Field(
-        default="urn:ngsi-ld:GeoSpatialLayer:Imperviousness:brussels:2024",
-        alias="IMPERVIOUSNESS_ENTITY_ID",
-    )
-    ndbi_entity_id: str = Field(
-        default="urn:ngsi-ld:GeoSpatialLayer:NDBI:brussels:2024",
-        alias="NDBI_ENTITY_ID",
-    )
-    albedo_entity_id: str = Field(
-        default="urn:ngsi-ld:GeoSpatialLayer:Albedo:brussels:2024",
-        alias="ALBEDO_ENTITY_ID",
-    )
+    # ── Data directories ──────────────────────────────────────────────
+    processed_dir: Path = Field(default=Path("/data/processed"), alias="DATA_PROCESSED_PATH")
+    models_dir: Path = Field(default=Path("/data/models"), alias="MODEL_PATH")
 
     # ── Multi-sensor ingestion ─────────────────────────────────────────
     vlinder_stations: str = Field(
@@ -105,19 +82,20 @@ class Settings(BaseSettings):
         return [s.strip() for s in self.vlinder_stations.split(",") if s.strip()]
 
     @property
-    def all_layer_entity_ids(self) -> dict[str, str]:
-        """Mapping layer_name → entity_id for all training layers."""
-        return {
-            "ndvi": self.ndvi_entity_id,
-            "ndwi": self.ndwi_entity_id,
-            "ndbi": self.ndbi_entity_id,
-            "dtm": self.dtm_entity_id,
-            "dsm": self.dsm_entity_id,
-            "building_height": self.building_height_entity_id,
-            "imperviousness": self.imperviousness_entity_id,
-            "albedo": self.albedo_entity_id,
-            "lst": self.lst_entity_id,
-        }
+    def layer_paths(self) -> dict[str, Path]:
+        return {name: self.processed_dir / file for name, file in LAYER_FILES.items()}
+
+    @property
+    def uhi_heatmap_path(self) -> Path:
+        return self.processed_dir / UHI_HEATMAP_FILE
+
+    @property
+    def model_file(self) -> Path:
+        return self.models_dir / MODEL_FILE
+
+    @property
+    def required_files(self) -> list[Path]:
+        return [*self.layer_paths.values(), self.uhi_heatmap_path, self.model_file]
 
     model_config = {"populate_by_name": True, "env_file": ".env"}
 

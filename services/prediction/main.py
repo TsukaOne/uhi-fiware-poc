@@ -15,7 +15,6 @@ from algorithm.api.sensor_router import router as sensor_router
 from algorithm.api.zone_router import router as zone_router
 from algorithm.application.zone_predictor import ZonePredictor
 from algorithm.config import settings
-from algorithm.infrastructure.layer_resolver import LayerResolver
 from algorithm.infrastructure.orion_client import OrionClient
 from algorithm.infrastructure.sensor_ingestion.orion_sync import SensorSyncService
 from algorithm.infrastructure.sensor_ingestion.sensors_community_provider import SensorsCommunityProvider
@@ -24,13 +23,8 @@ from algorithm.infrastructure.sensor_ingestion.vlinder_provider import VlinderPr
 logging.basicConfig(level=logging.INFO)
 
 orion_client = OrionClient(settings)
-layer_resolver = LayerResolver(orion_client)
 
-zone_predictor = ZonePredictor(
-    model_path=settings.model_path,
-    layer_resolver=layer_resolver,
-    settings=settings,
-)
+zone_predictor = ZonePredictor(settings)
 
 vlinder_provider = VlinderProvider(station_ids=settings.vlinder_station_ids)
 sensors_community_provider = SensorsCommunityProvider(
@@ -46,6 +40,10 @@ sensor_sync_service = SensorSyncService(
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    missing_files = [path for path in settings.required_files if not path.exists()]
+    if missing_files:
+        raise RuntimeError(f"Missing data files: {missing_files}")
+
     sync_task = asyncio.create_task(
         sensor_sync_service.run_periodic(settings.sensor_sync_interval)
     )
@@ -55,7 +53,7 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(
     title="UHI Prediction Service",
-    description="Urban Heat Island prediction. Input paths resolved from Orion-LD at runtime.",
+    description="Urban Heat Island prediction on user-drawn zones.",
     version="3.0.0",
     lifespan=lifespan,
 )

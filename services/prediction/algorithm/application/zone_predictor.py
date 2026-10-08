@@ -126,11 +126,9 @@ class ZonePredictor:
     Predicts UHI intensity for a user-drawn zone.
     """
 
-    def __init__(self, model_path: Path, layer_resolver, settings) -> None:
-        self._model_path = model_path #Path to the model
-        self._resolver = layer_resolver # LayerResolver instance
-        self._settings = settings # Setttings instance
-        self._decoder = LayerDecoder()# LayerDecoder instance for decoding raw raster values 
+    def __init__(self, settings) -> None:
+        self._settings = settings
+        self._decoder = LayerDecoder()
 
 
     async def predict(self,geometry: dict, objects: list[dict],) -> ZonePredictionResult:
@@ -149,14 +147,9 @@ class ZonePredictor:
         # Timer for performance logging
         t0 = time.perf_counter()
 
-        # 1. Resolve all layer paths from Orion
-        paths = await self._resolver.resolve_required(
-            self._settings.all_layer_entity_ids
-        )
-
-        # 2. Threaded prediction to avoid blocking the event Loop
+        # Threaded prediction to avoid blocking the event loop
         result = await asyncio.to_thread(
-            self._predict_sync, geometry, objects, paths
+            self._predict_sync, geometry, objects, self._settings.layer_paths
         )
 
         # Log performance stats
@@ -171,7 +164,7 @@ class ZonePredictor:
     # ── Synchronous prediction (runs in thread) ──────────────────────────
     def _predict_sync(self, geometry: dict, objects: list[dict], paths: dict[str, Path],) -> ZonePredictionResult:
         # 1. Load model
-        model_file = self._model_path / "xgb_uhi_latest.joblib"
+        model_file = self._settings.model_file
         if not model_file.exists():
             raise FileNotFoundError(
                 f"No trained model at {model_file}. Copy it from the full platform."
@@ -518,11 +511,8 @@ class ZonePredictor:
         """Compute mean/min/max/std of all decoded layers within a zone."""
         import asyncio
 
-        paths = await self._resolver.resolve_required(
-            self._settings.all_layer_entity_ids
-        )
         return await asyncio.to_thread(
-            self._compute_zone_stats_sync, geometry, paths
+            self._compute_zone_stats_sync, geometry, self._settings.layer_paths
         )
 
     def _compute_zone_stats_sync(
@@ -585,7 +575,7 @@ class ZonePredictor:
                 }
 
         # UHI prediction raster (if available) — decode uint8 → °C
-        uhi_path = self._settings.output_path / "uhi_xgb_heatmap_brussels_2024.tif"
+        uhi_path = self._settings.uhi_heatmap_path
         if uhi_path.exists():
             try:
                 with rasterio.open(uhi_path) as uhi_src:
