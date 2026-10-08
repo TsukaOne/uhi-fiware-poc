@@ -31,14 +31,6 @@ class Settings(BaseSettings):
     Validated once by Pydantic.
     """
 
-    # ── Orion-LD ────────────────────────────────────────────────────
-    orion_url: str = Field(default="http://orion:1026", alias="ORION_URL")
-    orion_timeout: float = Field(default=15.0, alias="ORION_TIMEOUT")
-    ngsi_ld_context: str = Field(
-        default="https://uri.etsi.org/ngsi-ld/v1/ngsi-ld-core-context.jsonld",
-        alias="NGSI_LD_CONTEXT",
-    )
-
     # ── Data directories ──────────────────────────────────────────────
     processed_dir: Path = Field(default=Path("/data/processed"), alias="DATA_PROCESSED_PATH")
     models_dir: Path = Field(default=Path("/data/models"), alias="MODEL_PATH")
@@ -56,10 +48,10 @@ class Settings(BaseSettings):
         alias="VLINDER_STATIONS",
         description="Comma-separated Mooncake station IDs for multi-sensor ingestion",
     )
-    sensor_sync_interval: float = Field(
+    sensor_refresh_interval: float = Field(
         default=600.0,
-        alias="SENSOR_SYNC_INTERVAL",
-        description="Interval in seconds between sensor sync cycles (default: 10 min)",
+        alias="SENSOR_REFRESH_INTERVAL",
+        description="Interval in seconds between sensor refreshes (default: 10 min)",
     )
 
     # ── Sensors.community ────────────────────────────────────────────

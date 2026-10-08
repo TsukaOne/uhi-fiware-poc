@@ -15,14 +15,11 @@ from algorithm.api.sensor_router import router as sensor_router
 from algorithm.api.zone_router import router as zone_router
 from algorithm.application.zone_predictor import ZonePredictor
 from algorithm.config import settings
-from algorithm.infrastructure.orion_client import OrionClient
-from algorithm.infrastructure.sensor_ingestion.orion_sync import SensorSyncService
+from algorithm.infrastructure.sensor_ingestion.sensor_cache import SensorCache
 from algorithm.infrastructure.sensor_ingestion.sensors_community_provider import SensorsCommunityProvider
 from algorithm.infrastructure.sensor_ingestion.vlinder_provider import VlinderProvider
 
 logging.basicConfig(level=logging.INFO)
-
-orion_client = OrionClient(settings)
 
 zone_predictor = ZonePredictor(settings)
 
@@ -32,10 +29,7 @@ sensors_community_provider = SensorsCommunityProvider(
     lon=settings.sc_center_lon,
     radius_km=settings.sc_radius_km,
 )
-sensor_sync_service = SensorSyncService(
-    providers=[vlinder_provider, sensors_community_provider],
-    orion_client=orion_client,
-)
+sensor_cache = SensorCache(providers=[vlinder_provider, sensors_community_provider])
 
 
 @asynccontextmanager
@@ -44,11 +38,11 @@ async def lifespan(app: FastAPI):
     if missing_files:
         raise RuntimeError(f"Missing data files: {missing_files}")
 
-    sync_task = asyncio.create_task(
-        sensor_sync_service.run_periodic(settings.sensor_sync_interval)
+    refresh_task = asyncio.create_task(
+        sensor_cache.run_periodic(settings.sensor_refresh_interval)
     )
     yield
-    sync_task.cancel()
+    refresh_task.cancel()
 
 
 app = FastAPI(

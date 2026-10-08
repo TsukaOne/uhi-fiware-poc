@@ -2,7 +2,7 @@
 Abstract base class for sensor data providers.
 
 Every new data source (VLINDER, Sensors.community, IRM, …) implements
-this interface so the sync orchestrator can treat them uniformly.
+this interface so the sensor cache can treat them uniformly.
 """
 from __future__ import annotations
 
@@ -17,7 +17,7 @@ class BaseSensorProvider(ABC):
     @property
     @abstractmethod
     def provider_name(self) -> str:
-        """Unique short identifier used in entity IDs (e.g. 'vlinder')."""
+        """Unique short identifier (e.g. 'vlinder')."""
 
     @abstractmethod
     async def fetch_readings(self) -> list[SensorReading]:

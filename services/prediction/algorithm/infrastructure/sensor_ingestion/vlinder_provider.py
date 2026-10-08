@@ -2,7 +2,7 @@
 VLINDER / Mooncake adapter — fetches real-time measurements from
 multiple VLINDER weather stations and normalizes them into SensorReadings.
 
-Station metadata (coordinates, name) is fetched once on first sync
+Station metadata (coordinates, name) is fetched once on first refresh
 and cached for the lifetime of the process.
 """
 from __future__ import annotations
