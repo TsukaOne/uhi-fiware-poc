@@ -24,8 +24,10 @@ FROM nginx:alpine
 # Copy built assets
 COPY --from=build /app/dist /usr/share/nginx/html
 
-# Copy nginx configuration
-COPY nginx.conf /etc/nginx/conf.d/default.conf
+# nginx config template: at container start, the image replaces ${CARTO_*}
+# variables from the environment and writes /etc/nginx/conf.d/default.conf
+ENV NGINX_ENVSUBST_FILTER=CARTO_
+COPY nginx.conf.template /etc/nginx/templates/default.conf.template
 
 # Expose port
 EXPOSE 80

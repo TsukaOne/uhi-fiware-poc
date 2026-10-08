@@ -2,7 +2,7 @@ import { ref, onMounted, onUnmounted, watch } from 'vue'
 import * as Cesium from 'cesium'
 
 import { useDrawing }           from '../../composables/Cesium/useDrawing.js'
-import { useWmsLayers }         from '../../composables/Cesium/useWmsLayers.js'
+import { useTileLayers }        from '../../composables/Cesium/useTileLayers.js'
 import { useCameraControls }    from '../../composables/Cesium/useCameraControls.js'
 import { useSunSimulation }     from '../../composables/Cesium/useSunSimulation.js'
 import { usePredictionOverlay } from '../../composables/Cesium/usePredictionOverlay.js'
@@ -60,7 +60,7 @@ export function useCesiumViewer(props, emit) {
     emit,
   })
 
-  const wmsLayers = useWmsLayers({
+  const tileLayers = useTileLayers({
     getViewer:      () => viewer,
     getLayerConfigs: () => props.layers,
   })
@@ -178,8 +178,8 @@ export function useCesiumViewer(props, emit) {
     // Depth testing ensures buildings sit on terrain rather than floating
     viewer.scene.globe.depthTestAgainstTerrain = true
 
-    // Setup WMS layers before flying to the init view
-    wmsLayers.setupImageryProviders()
+    // Setup the basemap before flying to the init view
+    tileLayers.setupImageryProviders()
     viewer.camera.flyTo({
       destination: Cesium.Cartesian3.fromDegrees(
         BRUSSELS_CENTER.longitude,
@@ -199,10 +199,10 @@ export function useCesiumViewer(props, emit) {
     _applyTilesetLod()
     if (props.roofFunctionsVisible) roofFunctions.enable()
 
-    // Load WMS layers that are already marked as visible in props
+    // Load tile layers that are already marked as visible in props
     props.layers
       .filter(layer => layer.visible)
-      .forEach(layer => wmsLayers.addWmsLayer(layer))
+      .forEach(layer => tileLayers.addTileLayer(layer))
 
     // Sensor click handler needs a brief delay for the viewer canvas to be ready
     setTimeout(() => sensorMarkers.setupClickHandler(), 1000)
@@ -326,7 +326,7 @@ export function useCesiumViewer(props, emit) {
     drawing.stopDrawing()
     predictionOverlay.cleanup()
     sensorMarkers.cleanup()
-    wmsLayers.cleanup()
+    tileLayers.cleanup()
 
     if (viewer) {
       viewer.destroy()
@@ -384,12 +384,12 @@ export function useCesiumViewer(props, emit) {
         if (!layerConfig) return
 
         if (visible) {
-          // addWmsLayer is a no-op if the layer is already loaded
-          wmsLayers.addWmsLayer(layerConfig)
-          wmsLayers.updateLayerOpacity(id, opacity)
+          // addTileLayer is a no-op if the layer is already loaded
+          tileLayers.addTileLayer(layerConfig)
+          tileLayers.updateLayerOpacity(id, opacity)
         } else {
-          // removeWmsLayer is a no-op if the layer is not loaded
-          wmsLayers.removeWmsLayer(id)
+          // removeTileLayer is a no-op if the layer is not loaded
+          tileLayers.removeTileLayer(id)
         }
       })
     },
@@ -408,7 +408,7 @@ export function useCesiumViewer(props, emit) {
   watch(
     [() => props.swipeEnabled, () => props.swipeLeftLayerId, () => props.swipeRightLayerId],
     ([enabled, leftId, rightId]) => {
-      wmsLayers.updateSwipeConfig(enabled, props.swipePosition, leftId, rightId)
+      tileLayers.updateSwipeConfig(enabled, props.swipePosition, leftId, rightId)
     }
   )
 

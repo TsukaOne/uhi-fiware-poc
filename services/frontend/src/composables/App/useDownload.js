@@ -2,7 +2,7 @@ import { ref, computed } from 'vue'
 import { predictionApi } from '../../services/predictionApi.js'
 
 /**
- * useDownload — Manages the GeoTIFF download flow for a WMS layer.
+ * useDownload — Manages the GeoTIFF download flow for a map layer.
  *
  * Two modes:
  *  - Full map: confirmed immediately via a dialog, no drawing required.

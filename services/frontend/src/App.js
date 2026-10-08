@@ -37,7 +37,7 @@ export function useAppState() {
   const sunSimEnabled = ref(false)
   const sunSimTime = ref(720) // minutes since midnight, default = 12:00 noon
 
-  // WMS layer definitions organized into categories
+  // Map layer definitions organized into categories (id = folder under /tiles)
   const layers = reactive([
     // ========================================
     // SECTION A: URBAN HEAT ISLANDS MAPS 
@@ -46,7 +46,6 @@ export function useAppState() {
       id: 'uhi_prediction',
       name: 'UHI Heat Risk',
       description: 'Heat island intensity vs. rural reference (°C)',
-      wmsLayer: 'uhi:uhi_prediction',
       visible: true,
       opacity: 0.7,
       category: 'uhi_maps',
@@ -63,7 +62,6 @@ export function useAppState() {
       id: 'rgb',
       name: 'RGB Orthophoto',
       description: 'True color aerial imagery',
-      wmsLayer: 'uhi:rgb',
       visible: false,
       opacity: 1.0,
       category: 'map_layers',
@@ -73,7 +71,6 @@ export function useAppState() {
       id: 'nir',
       name: 'NIR Orthophoto',
       description: 'Near-infrared imagery',
-      wmsLayer: 'uhi:nir',
       visible: false,
       opacity: 1.0,
       category: 'map_layers',
@@ -83,7 +80,6 @@ export function useAppState() {
       id: 'ndvi',
       name: 'NDVI',
       description: 'Vegetation Index (-1 to 1)',
-      wmsLayer: 'uhi:ndvi',
       visible: false,
       opacity: 0.7,
       category: 'map_layers',
@@ -96,7 +92,6 @@ export function useAppState() {
       id: 'ndwi',
       name: 'NDWI',
       description: 'Water Index (-1 to 1)',
-      wmsLayer: 'uhi:ndwi',
       visible: false,
       opacity: 0.7,
       category: 'map_layers',
@@ -109,7 +104,6 @@ export function useAppState() {
       id: 'dtm',
       name: 'DTM',
       description: 'Digital Terrain Model',
-      wmsLayer: 'uhi:dtm',
       visible: false,
       opacity: 0.7,
       category: 'map_layers',
@@ -122,7 +116,6 @@ export function useAppState() {
       id: 'lst',
       name: 'LST',
       description: 'Land Surface Temperature',
-      wmsLayer: 'uhi:lst',
       visible: false,
       opacity: 0.7,
       category: 'map_layers',
@@ -135,7 +128,6 @@ export function useAppState() {
       id: 'dsm',
       name: 'DSM',
       description: 'Digital Surface Model (elevation + objects)',
-      wmsLayer: 'uhi:dsm',
       visible: false,
       opacity: 0.7,
       category: 'map_layers',
@@ -148,7 +140,6 @@ export function useAppState() {
       id: 'ndbi',
       name: 'NDBI',
       description: 'Built-Up Index (-1 to 1)',
-      wmsLayer: 'uhi:ndbi',
       visible: false,
       opacity: 0.7,
       category: 'map_layers',
@@ -161,7 +152,6 @@ export function useAppState() {
       id: 'imperviousness',
       name: 'Imperviousness',
       description: 'Surface imperviousness (0-100%)',
-      wmsLayer: 'uhi:imperviousness',
       visible: false,
       opacity: 0.7,
       category: 'map_layers',
@@ -174,7 +164,6 @@ export function useAppState() {
       id: 'albedo',
       name: 'Albedo',
       description: 'Surface reflectance (0-1)',
-      wmsLayer: 'uhi:albedo',
       visible: false,
       opacity: 0.7,
       category: 'map_layers',

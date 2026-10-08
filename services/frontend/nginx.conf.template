@@ -1,0 +1,108 @@
+# ============================================================================
+#  nginx frontend — serves the SPA and the map tiles, gates the APIs
+#
+#  Template: ${CARTO_API_KEY} is filled in at container start by the nginx
+#  image (envsubst, restricted to CARTO_* variables — see Dockerfile).
+# ============================================================================
+
+# --- Rate limiting (http context) ---
+limit_req_zone  $binary_remote_addr zone=api:10m      rate=5r/s;
+limit_req_zone  $binary_remote_addr zone=basemap:10m  rate=50r/s;
+limit_conn_zone $binary_remote_addr zone=addr:10m;
+
+server {
+    listen 80;
+    server_name _;
+    root /usr/share/nginx/html;
+    index index.html;
+
+    server_tokens off;
+    client_max_body_size 1m;
+
+    # --- Real IP from reverse proxy (Caddy) ---
+    # nginx is only reachable from Caddy on the Docker private network
+    set_real_ip_from 10.0.0.0/8;
+    set_real_ip_from 172.16.0.0/12;
+    set_real_ip_from 192.168.0.0/16;
+    real_ip_header   X-Forwarded-For;
+    real_ip_recursive on;
+
+    gzip on;
+    gzip_types text/plain text/css application/json application/javascript text/xml application/xml application/xml+rss text/javascript;
+
+    # ======================= SPA =======================
+    location / {
+        try_files $uri $uri/ /index.html;
+        add_header X-Content-Type-Options "nosniff" always;
+        add_header X-Frame-Options        "SAMEORIGIN" always;
+        add_header Referrer-Policy        "strict-origin-when-cross-origin" always;
+    }
+
+    # ====================== PREDICTION ======================
+    # Only the routes the SPA calls. Everything else is refused.
+
+    location = /prediction/sensors {
+        limit_except GET { deny all; }
+        limit_req zone=api burst=10 nodelay;  limit_conn addr 10;
+        proxy_pass http://prediction:8000/sensors;
+        proxy_set_header Host $host;  proxy_read_timeout 30s;
+    }
+    location = /prediction/predict/layer/stats {
+        limit_except POST OPTIONS { deny all; }
+        limit_req zone=api burst=10 nodelay;  limit_conn addr 10;
+        proxy_pass http://prediction:8000/predict/layer/stats;
+        proxy_set_header Host $host;  proxy_read_timeout 120s;
+    }
+    location = /prediction/predict/zone/stats {
+        limit_except POST OPTIONS { deny all; }
+        limit_req zone=api burst=10 nodelay;  limit_conn addr 10;
+        proxy_pass http://prediction:8000/predict/zone/stats;
+        proxy_set_header Host $host;  proxy_read_timeout 120s;
+    }
+    location = /prediction/predict/zone {
+        limit_except POST OPTIONS { deny all; }
+        limit_req zone=api burst=5 nodelay;  limit_conn addr 5;
+        proxy_pass http://prediction:8000/predict/zone;
+        proxy_set_header Host $host;  proxy_read_timeout 300s;   # une prédiction de zone peut être longue
+    }
+    location = /prediction/predict/download {
+        limit_except POST OPTIONS { deny all; }
+        limit_req zone=api burst=5 nodelay;  limit_conn addr 5;
+        proxy_pass http://prediction:8000/predict/download;
+        proxy_set_header Host $host;  proxy_read_timeout 300s;
+    }
+
+    location /prediction/ { return 404; }
+
+    # ====================== MAP TILES ======================
+    # Static PNG exported by scripts/export_tiles.py, mounted from data/tiles.
+    # ^~ stops nginx from also matching the regex locations below.
+    location ^~ /tiles/ {
+        alias /usr/share/nginx/tiles/;
+        limit_conn addr 40;
+        expires 7d;
+    }
+
+    # ====================== BASEMAP (CARTO) ======================
+    # The browser asks /basemap/z/x/y.png; nginx adds the API key server-side,
+    # so the key never reaches the browser. Only z/x/y.png paths are accepted.
+    location ~ ^/basemap/(?<tile_z>\d+)/(?<tile_x>\d+)/(?<tile_y>\d+)\.png$ {
+        limit_except GET { deny all; }
+        limit_req zone=basemap burst=200 nodelay;
+        resolver 127.0.0.11 ipv6=off valid=300s;   # Docker DNS, needed because proxy_pass uses variables
+        proxy_pass https://a.basemaps.cartocdn.com/light_all/$tile_z/$tile_x/$tile_y.png?key=${CARTO_API_KEY};
+        proxy_ssl_server_name on;
+        proxy_ssl_verify on;
+        proxy_ssl_verify_depth 3;
+        proxy_ssl_trusted_certificate /etc/ssl/certs/ca-certificates.crt;
+        proxy_set_header Cookie "";
+    }
+
+    location /basemap/ { return 404; }
+
+    # ======================= STATIC ASSETS =======================
+    location ~* \.(js|css|png|jpg|jpeg|gif|ico|svg|woff|woff2)$ {
+        expires 1y;
+        add_header Cache-Control "public, immutable";
+    }
+}

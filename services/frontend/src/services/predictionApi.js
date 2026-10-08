@@ -38,7 +38,7 @@ export const predictionApi = {
 
   /**
    * POST /predict/layer/stats
-   * Compute statistics (mean, min, max, std, pixel_count) for a WMS layer
+   * Compute statistics (mean, min, max, std, pixel_count) for a map layer
    * over a given region. Pass geometry=null for full-map statistics.
    *
    * @param {string}      layerId  - Frontend layer ID (e.g. 'uhi_prediction', 'ndvi')

@@ -1,3 +1,8 @@
+# ============================================================================
+#  UHI Viewer — lightweight version: frontend + prediction only.
+#  The full FIWARE platform (Orion-LD, GeoServer, ingestion, training)
+#  lives on the `main` branch.
+# ============================================================================
 
 # Logging configuration for all services
 x-logging: &default-logging
@@ -7,74 +12,7 @@ x-logging: &default-logging
     max-file: "3"
 
 services:
-  # MongoDB for Orion-LD (using 5.0 for compatibility with Orion-LD 1.6.0)
-  mongo:
-    image: mongo:5.0
-    container_name: uhi-mongo
-    restart: unless-stopped
-    volumes:
-      - mongo_data:/data/db
-    networks:
-      - uhi-network
-    mem_limit: 2g
-    logging: *default-logging
-    healthcheck:
-      test: ["CMD", "mongo", "--eval", "db.adminCommand('ping')"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-
-  # Orion-LD Context Broker
-  orion:
-    image: fiware/orion-ld:1.6.0
-    container_name: uhi-orion
-    restart: unless-stopped
-    environment:
-      - ORIONLD_MONGO_HOST=mongo
-      - ORIONLD_MONGO_DB=orionld
-      - ORIONLD_LOG_LEVEL=WARN   
-    depends_on:
-      mongo:
-        condition: service_healthy
-    networks:
-      - uhi-network
-    mem_limit: 1g
-    logging: *default-logging
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:1026/version"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-
-  # Data Ingestion Service
-  ingestion:
-    build:
-      context: ./services/ingestion
-      dockerfile: Dockerfile
-    container_name: uhi-ingestion
-    restart: unless-stopped
-    environment:
-      - ORION_URL=http://orion:1026
-      - DATA_RAW_PATH=/data/raw
-      - DATA_PROCESSED_PATH=/data/processed
-      - GEOSERVER_CONFIG_PATH=/opt/geoserver_data/workspaces/uhi
-      - RGB_URL=${RGB_URL}
-      - NIR_URL=${NIR_URL}
-      - DTM_URL=${DTM_URL}
-      - BUILDINGS_AND_ENGINEERING_WORKS_URL=${BUILDINGS_AND_ENGINEERING_WORKS_URL}
-    volumes:
-      - ./data/raw:/data/raw
-      - ./data/processed:/data/processed
-      - ./config/geoserver:/opt/geoserver_data/workspaces/uhi
-    depends_on:
-      orion:
-        condition: service_healthy
-    networks:
-      - uhi-network
-    mem_limit: 2g
-    logging: *default-logging
-
-  # Data Prediction Service (XGBoost model)
+  # UHI prediction API (XGBoost on user-drawn zones + live sensors)
   prediction:
     build:
       context: ./services/prediction
@@ -82,91 +20,19 @@ services:
     container_name: uhi-prediction
     restart: unless-stopped
     environment:
-      - ORION_URL=http://orion:1026
       - DATA_PROCESSED_PATH=/data/processed
-      - SELF_URL=http://prediction:8000
-      # Entity IDs of input layers (the only "knowledge" the prediction service has)
-      - NDVI_ENTITY_ID=urn:ngsi-ld:GeoSpatialLayer:NDVI:brussels:2024
-      - NDWI_ENTITY_ID=urn:ngsi-ld:GeoSpatialLayer:NDWI:brussels:2024
-      - DTM_ENTITY_ID=urn:ngsi-ld:GeoSpatialLayer:DTM:brussels:2024
-      - BUILDING_HEIGHT_ENTITY_ID=urn:ngsi-ld:GeoSpatialLayer:BuildingHeight:brussels:2024
-      - LST_ENTITY_ID=urn:ngsi-ld:GeoSpatialLayer:LST:brussels:2024
-      # Rural reference point (for LST)
-      - RURAL_POINT_ROW=15561
-      - RURAL_POINT_COL=12526
-      # Training Hyparameters (can be overridden by API calls)
-      - TRAINING_SAMPLE_RATE=0.005
-      - TRAINING_N_ESTIMATORS=500
-      - TRAINING_MAX_DEPTH=8
-      - TRAINING_LEARNING_RATE=0.05
-      - TRAINING_USE_GPU=false 
-      # Model and cache storage paths
       - MODEL_PATH=/data/models
-      - CACHE_PATH=/data/cache
     volumes:
-      - ./data/processed:/data/processed
-      - ./data/models:/data/models
-      - ./data/cache:/data/cache
-    depends_on:
-      orion:
-        condition: service_healthy
+      - ./data/processed:/data/processed:ro
+      - ./data/models:/data/models:ro
     networks:
       - uhi-network
     mem_limit: 4g
-    cpus: "1.5"        
+    cpus: "1.5"
     pids_limit: 256
     logging: *default-logging
 
-  # GeoServer Sync – keeps GeoServer layers in sync with Orion entities
-  geoserver-sync:
-    build:
-      context: ./services/geoserver-sync
-      dockerfile: Dockerfile
-    container_name: uhi-geoserver-sync
-    restart: unless-stopped
-    environment:
-      - ORION_URL=http://orion:1026
-      - GEOSERVER_URL=http://geoserver:8080/geoserver
-      - GEOSERVER_USER=uhi_admin
-      - GEOSERVER_PASSWORD=${GEOSERVER_ADMIN_PASSWORD}   
-      - GEOSERVER_WORKSPACE=uhi
-      - SELF_URL=http://geoserver-sync:8000
-      # Path mapping: container path → GeoServer internal path
-      - PATH_MAP_PROCESSED=/data/processed:/opt/geoserver_data/data/uhi_processed
-      - PATH_MAP_RAW=/data/raw:/opt/geoserver_data/data/uhi_raw
-    depends_on:
-      orion:
-        condition: service_healthy
-      geoserver:
-        condition: service_started
-    networks:
-      - uhi-network
-    mem_limit: 512m
-    logging: *default-logging
-
-  # GeoServer for visualization
-  geoserver:
-    image: docker.osgeo.org/geoserver:2.24.4   # 2.24.2 → 2.24.4 : corrige la RCE CVE-2024-36401
-    container_name: uhi-geoserver
-    restart: unless-stopped
-    environment:
-      - SKIP_DEMO_DATA=true
-      - ROOT_WEBAPP_REDIRECT=true
-      # Admin account
-      - GEOSERVER_ADMIN_USER=uhi_admin
-      - GEOSERVER_ADMIN_PASSWORD=${GEOSERVER_ADMIN_PASSWORD}   # depuis .env (gitignored)
-      # CORS 
-      - CORS_ENABLED=false
-    volumes:
-      - ./data/processed:/opt/geoserver_data/data/uhi_processed:ro
-      - ./data/raw:/opt/geoserver_data/data/uhi_raw:ro
-      - ./config/geoserver:/opt/geoserver_data/workspaces/uhi
-    networks:
-      - uhi-network
-    mem_limit: 4g
-    logging: *default-logging
-
-  # Frontend -  Cesium + Vue.js Viewer
+  # Frontend - Cesium + Vue.js viewer, map tiles and API gateway (nginx)
   frontend:
     build:
       context: ./services/frontend
@@ -176,13 +42,18 @@ services:
         VITE_CESIUM_ION_TOKEN: ${VITE_CESIUM_ION_TOKEN}
     container_name: uhi-frontend
     restart: unless-stopped
+    environment:
+      # Runtime only: written into the nginx config, never sent to the browser
+      - CARTO_API_KEY=${CARTO_API_KEY:?CARTO_API_KEY must be set in .env}
+    volumes:
+      - ./data/tiles:/usr/share/nginx/tiles:ro
     depends_on:
-      - geoserver
-      - orion
+      - prediction
     networks:
       - uhi-network
     mem_limit: 256m
     logging: *default-logging
+
   # Caddy reverse proxy for HTTPS and ACME certificate management
   caddy:
     image: caddy:2-alpine
@@ -210,6 +81,5 @@ networks:
     driver: bridge
 
 volumes:
-  mongo_data:
   caddy_data:
   caddy_config:

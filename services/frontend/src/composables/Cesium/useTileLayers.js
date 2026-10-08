@@ -1,26 +1,25 @@
 import * as Cesium from 'cesium'
 
-// GeoServer WMS endpoint
-const GEOSERVER_URL = '/geoserver'
+// Static PNG tiles exported by scripts/export_tiles.py, served by nginx
+const TILES_URL = '/tiles'
 
-// Bounding box of the Brussels-Capital Region.
-// Without it Cesium requests WMS tiles across the whole globe, most of which
-// GeoServer answers with an empty image — hundreds of useless round-trips.
+// CARTO basemap, proxied by nginx which adds the API key server-side
+const BASEMAP_URL = '/basemap/{z}/{x}/{y}.png'
+
+// Bounding box of the Brussels-Capital Region: tiles only exist inside it.
 const BRUSSELS_EXTENT = [4.20, 50.75, 4.50, 50.92]  // west, south, east, north
 
-// Source rasters are 10 m/px (see LAYER_RESOLUTION_M in PredictionPanel).
-// Level 17 is already ~1 m/px — beyond that we would only magnify pixels.
-const WMS_MIN_LEVEL = 10
-const WMS_MAX_LEVEL = 17
-
-// 512px tiles instead of the 256px default: ~4x fewer requests for the same area
-const WMS_TILE_SIZE = 512
+// Must match MIN_LEVEL / MAX_LEVEL / TILE_SIZE_PX of scripts/export_tiles.py.
+// Rasters are 0.4 m/px: level 16 already reaches it, Cesium magnifies beyond.
+const TILE_MIN_LEVEL = 10
+const TILE_MAX_LEVEL = 16
+const TILE_SIZE_PX = 512
 
 /**
- * useWmsLayers — Manages WMS imagery layers and the swipe/split-view feature.
+ * useTileLayers — Manages the map tile layers and the swipe/split-view feature.
  *
  * Responsibilities:
- *  - Add/remove/update WMS layers from GeoServer onto the Cesium viewer
+ *  - Add/remove/update tile layers onto the Cesium viewer
  *  - Configure the split-screen swipe comparison (left/right layer assignment)
  *  - Restore pre-swipe visibility state when swipe is disabled
  *
@@ -28,12 +27,12 @@ const WMS_TILE_SIZE = 512
  * @param {() => Cesium.Viewer} options.getViewer - Returns the current Cesium viewer
  * @param {() => Array}  options.getLayerConfigs  - Returns the full layers array (for swipe lazy-load)
  */
-export function useWmsLayers({ getViewer, getLayerConfigs }) {
+export function useTileLayers({ getViewer, getLayerConfigs }) {
 
   // ── Internal state ──────────────────────────────────────────────────────────
 
-  /** Map<layerId, Cesium.ImageryLayer> — tracks every loaded WMS layer */
-  const wmsLayers = new Map()
+  /** Map<layerId, Cesium.ImageryLayer> — tracks every loaded tile layer */
+  const tileLayers = new Map()
 
   const errorReported = new Set()
 
@@ -59,43 +58,32 @@ export function useWmsLayers({ getViewer, getLayerConfigs }) {
     viewer.imageryLayers.removeAll()
 
     const cartoDBProvider = new Cesium.UrlTemplateImageryProvider({
-      url: 'https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png',
-      subdomains: ['a', 'b', 'c', 'd'],
+      url: BASEMAP_URL,
       credit: '© CartoDB'
     })
     viewer.imageryLayers.addImageryProvider(cartoDBProvider)
   }
 
 
-  // ── WMS layer lifecycle ─────────────────────────────────────────────────────
+  // ── Tile layer lifecycle ────────────────────────────────────────────────────
 
   /**
-   * Load a WMS layer from GeoServer and add it to the viewer.
+   * Load a tile layer and add it to the viewer.
    * No-op if the layer is already loaded.
    */
-  function addWmsLayer(layerConfig) {
+  function addTileLayer(layerConfig) {
     const viewer = getViewer()
-    if (!viewer || wmsLayers.has(layerConfig.id)) return
+    if (!viewer || tileLayers.has(layerConfig.id)) return
 
-    const provider = new Cesium.WebMapServiceImageryProvider({
-      url: `${GEOSERVER_URL}/uhi/wms`,
-      layers: layerConfig.wmsLayer,
-      parameters: {
-        service: 'WMS',
-        version: '1.1.1',
-        request: 'GetMap',
-        format: 'image/png',
-        transparent: true,
-        styles: '',
-        crs: 'EPSG:4326'
-      },
-      enablePickFeatures: true,
+    const provider = new Cesium.UrlTemplateImageryProvider({
+      url: `${TILES_URL}/${layerConfig.id}/{z}/{x}/{y}.png`,
+      tilingScheme: new Cesium.GeographicTilingScheme(),
       credit: 'UHI Brussels - FARI',
       rectangle: Cesium.Rectangle.fromDegrees(...BRUSSELS_EXTENT),
-      minimumLevel: WMS_MIN_LEVEL,
-      maximumLevel: WMS_MAX_LEVEL,
-      tileWidth: WMS_TILE_SIZE,
-      tileHeight: WMS_TILE_SIZE,
+      minimumLevel: TILE_MIN_LEVEL,
+      maximumLevel: TILE_MAX_LEVEL,
+      tileWidth: TILE_SIZE_PX,
+      tileHeight: TILE_SIZE_PX,
     })
 
     // One warning per layer, not per failed tile
@@ -103,7 +91,7 @@ export function useWmsLayers({ getViewer, getLayerConfigs }) {
       if (errorReported.has(layerConfig.id)) return
       errorReported.add(layerConfig.id)
       console.warn(
-        `WMS layer "${layerConfig.id}" is failing to load tiles — is GeoServer reachable?`,
+        `Tile layer "${layerConfig.id}" is failing to load tiles — were they exported?`,
         error?.message ?? error
       )
     })
@@ -112,27 +100,27 @@ export function useWmsLayers({ getViewer, getLayerConfigs }) {
     imageryLayer.alpha = layerConfig.opacity
     imageryLayer.show = true
 
-    wmsLayers.set(layerConfig.id, imageryLayer)
+    tileLayers.set(layerConfig.id, imageryLayer)
   }
 
   /**
-   * Remove a WMS layer from the viewer and drop it from the tracking map.
+   * Remove a tile layer from the viewer and drop it from the tracking map.
    */
-  function removeWmsLayer(layerId) {
+  function removeTileLayer(layerId) {
     const viewer = getViewer()
-    if (!viewer || !wmsLayers.has(layerId)) return
+    if (!viewer || !tileLayers.has(layerId)) return
 
-    viewer.imageryLayers.remove(wmsLayers.get(layerId))
-    wmsLayers.delete(layerId)
+    viewer.imageryLayers.remove(tileLayers.get(layerId))
+    tileLayers.delete(layerId)
     errorReported.delete(layerId)
   }
 
   /**
-   * Update the opacity (alpha) of a loaded WMS layer.
+   * Update the opacity (alpha) of a loaded tile layer.
    */
   function updateLayerOpacity(layerId, opacity) {
-    if (!wmsLayers.has(layerId)) return
-    wmsLayers.get(layerId).alpha = opacity
+    if (!tileLayers.has(layerId)) return
+    tileLayers.get(layerId).alpha = opacity
   }
 
 
@@ -165,7 +153,7 @@ export function useWmsLayers({ getViewer, getLayerConfigs }) {
       swipeActive = false
 
       // Restore pre-swipe visibility for every layer
-      wmsLayers.forEach((layer, id) => {
+      tileLayers.forEach((layer, id) => {
         layer.show = preSwipeLayerShow.has(id) ? preSwipeLayerShow.get(id) : false
         layer.splitDirection = Cesium.SplitDirection.NONE
       })
@@ -173,7 +161,7 @@ export function useWmsLayers({ getViewer, getLayerConfigs }) {
       // Unload layers that only exist because of this swipe session
       Array.from(preSwipeLayerShow.entries())
         .filter(([, wasVisible]) => !wasVisible)
-        .forEach(([id]) => removeWmsLayer(id))
+        .forEach(([id]) => removeTileLayer(id))
 
       preSwipeLayerShow.clear()
       return
@@ -182,23 +170,23 @@ export function useWmsLayers({ getViewer, getLayerConfigs }) {
     // First activation: snapshot current visibility before modifying anything
     if (!swipeActive) {
       swipeActive = true
-      wmsLayers.forEach((layer, id) => {
+      tileLayers.forEach((layer, id) => {
         preSwipeLayerShow.set(id, layer.show)
       })
     }
 
     // Lazy-load left/right layers in case they were not visible before swipe
     for (const layerId of [leftLayerId, rightLayerId]) {
-      if (!layerId || wmsLayers.has(layerId)) continue
+      if (!layerId || tileLayers.has(layerId)) continue
       const config = getLayerConfigs().find(l => l.id === layerId)
       if (config) {
-        addWmsLayer(config)
+        addTileLayer(config)
         if (!preSwipeLayerShow.has(layerId)) preSwipeLayerShow.set(layerId, false)
       }
     }
 
     // Assign split directions: only left and right layers are visible
-    wmsLayers.forEach((layer, id) => {
+    tileLayers.forEach((layer, id) => {
       if (id === leftLayerId) {
         layer.show = true
         layer.splitDirection = Cesium.SplitDirection.LEFT
@@ -216,21 +204,21 @@ export function useWmsLayers({ getViewer, getLayerConfigs }) {
   // ── Cleanup ─────────────────────────────────────────────────────────────────
 
   /**
-   * Remove all tracked WMS layers from the viewer.
+   * Remove all tracked tile layers from the viewer.
    * Called when the CesiumViewer component is unmounted.
    */
   function cleanup() {
     const viewer = getViewer()
     if (!viewer) return
-    wmsLayers.forEach(layer => viewer.imageryLayers.remove(layer))
-    wmsLayers.clear()
+    tileLayers.forEach(layer => viewer.imageryLayers.remove(layer))
+    tileLayers.clear()
     errorReported.clear()
   }
 
   return {
     setupImageryProviders,
-    addWmsLayer,
-    removeWmsLayer,
+    addTileLayer,
+    removeTileLayer,
     updateLayerOpacity,
     updateSwipeConfig,
     cleanup,
