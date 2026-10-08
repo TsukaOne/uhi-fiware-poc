@@ -171,41 +171,6 @@ async def zone_stats(
     )
 
 
-# ── Pixel value query ────────────────────────────────────────────────────────
-
-
-class PixelValueRequest(BaseModel):
-    lon: float = Field(..., description="Longitude (WGS84)")
-    lat: float = Field(..., description="Latitude (WGS84)")
-
-
-class PixelValueResponse(BaseModel):
-    status: str
-    lon: float
-    lat: float
-    values: dict[str, Optional[float]]
-
-
-@router.post("/predict/pixel/value", response_model=PixelValueResponse)
-async def pixel_value(
-    request: PixelValueRequest,
-    predictor: ZonePredictor = Depends(_get_zone_predictor),
-):
-    """Return decoded physical values for all layers at a single lon/lat."""
-    try:
-        result = await predictor.get_pixel_values(lon=request.lon, lat=request.lat)
-    except Exception as e:
-        logger.exception("Pixel value lookup failed")
-        raise HTTPException(500, f"Pixel value lookup failed: {e}")
-
-    return PixelValueResponse(
-        status="success",
-        lon=result.lon,
-        lat=result.lat,
-        values=result.values,
-    )
-
-
 # ── Single-layer global stats ────────────────────────────────────────────────
 
 

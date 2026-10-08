@@ -120,13 +120,6 @@ class ZoneStatsResult:
     pixel_count: int
     bounds: dict
 
-#
-@dataclass
-class PixelValueResult:
-    values: dict[str, float | None]  # {layer_name: decoded_value or None}
-    lon: float
-    lat: float
-
 
 class ZonePredictor:
     """
@@ -181,7 +174,7 @@ class ZonePredictor:
         model_file = self._model_path / "xgb_uhi_latest.joblib"
         if not model_file.exists():
             raise FileNotFoundError(
-                f"No trained model at {model_file}. Run POST /training/start first."
+                f"No trained model at {model_file}. Copy it from the full platform."
             )
         artifact = joblib.load(model_file)
         xgb_model = artifact["model"]
@@ -474,7 +467,7 @@ class ZonePredictor:
         Convert UHI raster (°C delta) to RGBA PNG using the same colormap
         as the GeoServer SLD for visual consistency.
 
-        Encoding matches predict_service: heat_risk = (y_pred - uhi_min) / (uhi_max - uhi_min)
+        Encoding matches the full-map heatmap: heat_risk = (y_pred - uhi_min) / (uhi_max - uhi_min)
         then the RdYlBu ramp is applied on the [0, 1] normalized range.
         """
         h, w = uhi_raster.shape
@@ -630,62 +623,3 @@ class ZonePredictor:
         return ZoneStatsResult(
             layer_stats=layer_stats, pixel_count=n_valid, bounds=bounds
         )
-
-    # ── Single pixel value lookup ────────────────────────────────────
-
-    async def get_pixel_values(self, lon: float, lat: float) -> PixelValueResult:
-        """Return decoded physical values for all layers at a single lon/lat."""
-        import asyncio
-
-        paths = await self._resolver.resolve_required(
-            self._settings.all_layer_entity_ids
-        )
-        return await asyncio.to_thread(
-            self._get_pixel_values_sync, lon, lat, paths
-        )
-
-    def _get_pixel_values_sync(
-        self, lon: float, lat: float, paths: dict[str, Path]
-    ) -> PixelValueResult:
-        from pyproj import Transformer
-
-        values: dict[str, float | None] = {}
-
-        for layer_name, path in paths.items():
-            try:
-                with rasterio.open(path) as src:
-                    # Transform lon/lat to raster CRS
-                    if str(src.crs) != "EPSG:4326":
-                        transformer = Transformer.from_crs(
-                            "EPSG:4326", src.crs, always_xy=True
-                        )
-                        x, y = transformer.transform(lon, lat)
-                    else:
-                        x, y = lon, lat
-
-                    row, col = src.index(x, y)
-
-                    # Check bounds
-                    if row < 0 or row >= src.height or col < 0 or col >= src.width:
-                        values[layer_name] = None
-                        continue
-
-                    # Read single pixel
-                    window = Window(col, row, 1, 1)
-                    raw = src.read(1, window=window)
-
-                    # Decode
-                    decoded, nodata_mask = self._decoder.decode(
-                        raw, layer_name, raster_path=str(path)
-                    )
-
-                    if nodata_mask[0, 0]:
-                        values[layer_name] = None
-                    else:
-                        values[layer_name] = round(float(decoded[0, 0]), 4)
-
-            except Exception as exc:
-                logger.warning(f"Failed to read pixel for {layer_name}: {exc}")
-                values[layer_name] = None
-
-        return PixelValueResult(values=values, lon=lon, lat=lat)
