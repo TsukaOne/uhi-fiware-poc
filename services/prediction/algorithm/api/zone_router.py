@@ -25,6 +25,11 @@ router = APIRouter()
 
 UHI_LAYER = "uhi"
 
+# Cropped GeoTIFFs are tiled only when larger than one block (GeoTIFF blocks
+# must be multiples of 16 px); smaller crops are written as strips.
+CROP_BLOCK_SIZE_PX = 256
+BLOCK_LAYOUT_KEYS = ("tiled", "blockxsize", "blockysize")
+
 
 # ── Request / Response schemas ────────────────────────────────────────────────
 
@@ -332,16 +337,11 @@ async def download_layer(request: DownloadRequest):
             data = src.read(window=window)
             win_transform = src.window_transform(window)
 
-            profile = src.profile.copy()
-            profile.update(
-                width=int(window.width),
-                height=int(window.height),
-                transform=win_transform,
-                compress="deflate",
-                tiled=True,
-                blockxsize=min(256, int(window.width)),
-                blockysize=min(256, int(window.height)),
-            )
+            width, height = int(window.width), int(window.height)
+            profile = {key: value for key, value in src.profile.items() if key not in BLOCK_LAYOUT_KEYS}
+            profile.update(width=width, height=height, transform=win_transform, compress="deflate")
+            if min(width, height) >= CROP_BLOCK_SIZE_PX:
+                profile.update(tiled=True, blockxsize=CROP_BLOCK_SIZE_PX, blockysize=CROP_BLOCK_SIZE_PX)
 
             buf = io.BytesIO()
             with rasterio.open(buf, "w", **profile) as dst:

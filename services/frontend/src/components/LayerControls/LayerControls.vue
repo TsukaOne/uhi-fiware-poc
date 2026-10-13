@@ -74,8 +74,8 @@
                     </div>
                   </div>
                 </Transition>
-                <!-- Per-layer action buttons -->
-                <div class="layer-actions" v-if="layer.visible && !swipeEnabled">
+                <!-- Per-layer action buttons (photos have no data to analyse or download) -->
+                <div class="layer-actions" v-if="layer.visible && !swipeEnabled && !layer.isPhoto">
                   <button class="layer-action-btn info" @click="$emit('layer-metadata', layer.id)" title="Zone Metadata">
                     <i class="fas fa-circle-info"></i> Info
                   </button>
@@ -190,8 +190,8 @@
                     </div>
                   </div>
                 </Transition>
-                <!-- Per-layer action buttons -->
-                <div class="layer-actions" v-if="layer.visible && !swipeEnabled">
+                <!-- Per-layer action buttons (photos have no data to analyse or download) -->
+                <div class="layer-actions" v-if="layer.visible && !swipeEnabled && !layer.isPhoto">
                   <button class="layer-action-btn info" @click="$emit('layer-metadata', layer.id)" title="Zone Metadata">
                     <i class="fas fa-circle-info"></i> Info
                   </button>

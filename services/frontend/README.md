@@ -1,195 +1,82 @@
-# Frontend -- UHI Viewer
+# Frontend — UHI Viewer
 
-A **Vue 3 + CesiumJS** web application for visualizing Urban Heat Island data on an interactive 3D globe. Displays WMS layers served by GeoServer, real-time sensor markers, and supports interactive zone prediction with object impact simulation.
+A **Vue 3 + CesiumJS** application showing the Urban Heat Islands of Brussels on a 3D globe. In production the same container's **nginx** serves the site and the map tiles, and is the only gateway to the prediction API and the basemap.
 
 ## Features
 
-```mermaid
-flowchart TB
-    subgraph "CesiumJS 3D Globe"
-        BASE["OpenStreetMap<br/>base map"]
-        WMS["WMS Layers<br/>(12+ toggleable layers)"]
-        MARKERS["Sensor Markers<br/>(VLINDER + Sensors.community)"]
-        OVERLAY["Prediction Overlay<br/>(zone RGBA PNG)"]
-        DRAW["Polygon Drawing<br/>(zone selection)"]
-        SUN["Sun Simulation<br/>(lighting model)"]
-    end
+- **3D globe**: Cesium terrain, 3D buildings and trees, free-flight mode, sun simulation.
+- **11 map layers**: UHI heatmap, RGB and NIR orthophotos, NDVI, NDWI, NDBI, LST, DTM, DSM, imperviousness and albedo. Each layer has its own opacity, a legend, and a swipe comparison.
+- **Zone workflow**: draw a zone, read its statistics, place objects (trees, buildings, fountains, solar panels…), then predict the UHI.
+- **Layer actions**: statistics and GeoTIFF download, for a whole layer or a drawn box. The photo layers (RGB, NIR) have no such actions.
+- **Live sensors**: VLINDER and Sensors.community markers with temperature, humidity and wind.
 
-    subgraph "Side Panels"
-        LC["Layer Controls<br/>toggle + opacity"]
-        PP["Prediction Panel<br/>zone prediction UI"]
-        ZI["Zone Info Panel<br/>statistics display"]
-        ZO["Zone Objects Panel<br/>trees, buildings, ..."]
-        PI["Pixel Info Panel<br/>click-to-query values"]
-        TB["T-Base Slider<br/>temperature baseline"]
-    end
+## Where the data comes from
 
-    subgraph "Backend APIs"
-        GS["GeoServer<br/>/geoserver/*"]
-        PRED["Prediction<br/>/prediction/*"]
-        ORION["Orion-LD<br/>/orion/*"]
-    end
+The app only calls same-origin paths:
 
-    LC --> WMS
-    PP --> DRAW
-    DRAW --> OVERLAY
-    ZO --> PRED
-    PI --> PRED
-    WMS --> GS
-    MARKERS --> PRED
-    OVERLAY --> PRED
-    ZI --> ORION
-```
+| Path | Content | Development (Vite proxy) | Production (nginx) |
+|---|---|---|---|
+| `/tiles/<layer>/{z}/{x}/{y}.png` | Map layer tiles | → frontend container (`127.0.0.1:3000`) | `data/tiles`, mounted read-only |
+| `/basemap/{z}/{x}/{y}.png` | CARTO basemap | → CARTO, key added by Vite | → CARTO, key added by nginx |
+| `/prediction/*` | Prediction API | → `127.0.0.1:8002` | → `prediction:8000`, 5 allowed routes only |
 
-### Core Capabilities
+The tiles use Cesium's `GeographicTilingScheme`: 512 px tiles, levels 10 to 16, limited to the Brussels extent. The constants in [useTileLayers.js](src/composables/Cesium/useTileLayers.js) must match those of [scripts/export_tiles.py](../../scripts/export_tiles.py). A layer's tiles folder is its `id` in [App.js](src/App.js).
 
-- **3D globe** powered by [CesiumJS 1.114.0](https://cesium.com/cesiumjs/) with OpenStreetMap base
-- **12+ WMS layers**: RGB, NIR, NDVI, NDWI, LST, DTM, DSM, Building Height, Albedo, NDBI, Imperviousness, UHI Prediction
-- **Per-layer opacity control** with gradient legends
-- **Pixel click query** -- click any point to see decoded values across all layers
-- **Zone prediction** -- draw a polygon, optionally add objects (trees, buildings, solar panels), get UHI prediction
-- **Object impact simulation** -- see how urban planning changes affect heat-risk
-- **Real-time sensor markers** -- VLINDER + Sensors.community stations with temperature, humidity, wind data
-- **Sun position simulation** -- solar lighting model based on time of day
-- **Zone statistics** -- mean, min, max values per layer for any drawn zone
-- **GeoTIFF export** -- download zone prediction as a raster file
+The CARTO key is read from `CARTO_API_KEY` in the repository root `.env`:
+- in development, by [vite.config.js](vite.config.js), on the Node side;
+- in production, by nginx at container start, from [nginx.conf.template](nginx.conf.template).
 
-## Available WMS Layers
-
-| Layer | WMS Name | Description |
-|---|---|---|
-| RGB Orthophoto | `uhi:rgb` | True-color aerial imagery |
-| NIR Orthophoto | `uhi:nir` | Near-infrared imagery |
-| NDVI | `uhi:ndvi` | Vegetation index (-1 to 1) |
-| NDWI | `uhi:ndwi` | Water index (-1 to 1) |
-| NDBI | `uhi:ndbi` | Built-up index (-1 to 1) |
-| DTM | `uhi:dtm` | Digital Terrain Model |
-| DSM | `uhi:dsm` | Digital Surface Model |
-| LST | `uhi:lst` | Land Surface Temperature |
-| Building Height | `uhi:buildingheight` | Building height in meters |
-| Albedo | `uhi:albedo` | Surface reflectivity |
-| Imperviousness | `uhi:imperviousness` | Soil sealing (0-100%) |
-| UHI Prediction | `uhi:uhi_prediction` | Heat risk (0 = cool, 1 = hot) |
-
+It is never bundled into the browser code.
 
 ## Development
 
-### Local development (without Docker)
-
-The backend still has to run in Docker, with the dev overlay so its ports are
-reachable from the host:
-
 ```bash
-# from the repo root
-docker compose -f docker-compose.yml -f docker-compose.dev.yml up -d
+# from the repo root: prediction (8002) + frontend container serving the tiles (3000)
+docker compose -f docker-compose.yml -f docker-compose.dev.yml up -d --build prediction frontend
 
 cd services/frontend
 npm install
 npm run dev
-# -> http://localhost:5173
+# -> http://127.0.0.1:5173
 ```
 
-The app always calls same-origin paths (`/geoserver`, `/orion`, `/prediction`).
-In dev those are handled by the Vite proxy declared in `vite.config.js`; in
-production the same paths are served by nginx (`nginx.conf`). GeoServer runs with
-`CORS_ENABLED=false`, so going through a proxy is not optional.
+## Production build
 
-### Production build
+The [Dockerfile](Dockerfile) builds in two stages:
+1. `node:20-alpine` runs `npm run build`. `VITE_CESIUM_ION_TOKEN` is passed as a build argument.
+2. `nginx:alpine` serves `dist/`. At start, the nginx image fills `${CARTO_API_KEY}` into the config template. Only `CARTO_*` variables are substituted.
 
-The Dockerfile uses a multi-stage build:
-
-1. **Build stage**: `node:20-alpine` runs `npm run build`
-2. **Serve stage**: `nginx:alpine` serves the static files
-
-```bash
-docker build -t uhi-frontend .
-docker run -p 3000:80 uhi-frontend
-```
-
-## Project Structure
+## Project structure
 
 ```
 frontend/
 ├── src/
-│   ├── main.js                          # Vue app entry point
-│   ├── App.vue                          # Root component, layer definitions
-│   ├── App.js                           # App logic & state management
-│   ├── App.css                          # Global styles
-│   │
+│   ├── main.js                          # Vue entry point, Cesium token and request limits
+│   ├── App.vue / App.js / App.css       # Root component, app state, layer definitions
 │   ├── components/
-│   │   ├── CesiumViewer/                # 3D globe + WMS layer rendering
-│   │   │   ├── CesiumViewer.vue
-│   │   │   └── CesiumViewer.js
-│   │   ├── LayerControls/               # Layer toggle panel + opacity sliders
-│   │   │   ├── LayerControls.vue
-│   │   │   └── LayerControls.css
-│   │   ├── PredictionPanel/             # Zone prediction UI
-│   │   │   ├── PredictionPanel.vue
-│   │   │   └── PredictionPanel.css
-│   │   ├── SelectionOverlay/            # Polygon drawing interface
-│   │   │   └── SelectionOverlay.vue
-│   │   ├── ZoneInfoPanel/               # Zone metadata + statistics
-│   │   │   ├── ZoneInfoPanel.vue
-│   │   │   └── ZoneInfoPanel.css
-│   │   ├── ZoneObjectsPanel.vue         # Drag-and-drop urban objects
-│   │   ├── PixelInfoPanel.vue           # Click-to-query values
-│   │   └── TBaseSlider.vue              # Temperature baseline slider
-│   │
-│   ├── composables/                     # Vue 3 Composition API functions
-│   │   ├── App/
-│   │   │   ├── useWorkflow.js           # UI workflow orchestration
-│   │   │   ├── usePixelQuery.js         # Single-pixel value lookups
-│   │   │   ├── useLayerInfo.js          # Layer metadata from Orion
-│   │   │   ├── useDownload.js           # GeoTIFF export
-│   │   │   └── useDraggable.js          # Draggable panel state
-│   │   └── Cesium/
-│   │       ├── useWmsLayers.js          # WMS layer creation + management
-│   │       ├── usePredictionOverlay.js  # Zone prediction PNG overlay
-│   │       ├── useDrawing.js            # Polygon drawing on globe
-│   │       ├── useSensorMarkers.js      # Real-time sensor markers
-│   │       ├── useSunSimulation.js      # Sun position calculation
-│   │       ├── usePixelClick.js         # Map click handling
-│   │       └── useCameraControls.js     # Camera positioning/flight
-│   │
-│   └── services/                        # API clients
-│       ├── api.js                       # Generic HTTP client (via Nginx proxy)
-│       ├── orionApi.js                  # Orion-LD entity CRUD
-│       └── predictionApi.js             # Prediction + sensor endpoints
-│
-├── index.html                           # HTML entry point
-├── nginx.conf                           # Reverse proxy configuration
-├── vite.config.js                       # Vite + Cesium asset plugin
-├── package.json                         # Dependencies
-├── Dockerfile                           # Multi-stage build
-└── .dockerignore
+│   │   ├── CesiumViewer/                # Globe setup, wires the Cesium composables
+│   │   ├── LayerControls/               # Layer toggles, opacity, legends, sensors list
+│   │   ├── SelectionOverlay/            # Highlight of the drawn zone
+│   │   ├── ZoneInfoPanel/               # Zone statistics
+│   │   ├── ZoneObjectsPanel/            # Drag-and-drop urban objects
+│   │   └── PredictionPanel/             # Zone prediction and before/after comparison
+│   ├── composables/
+│   │   ├── App/                         # useWorkflow, useLayerInfo, useDownload, useDraggable
+│   │   └── Cesium/                      # useTileLayers, useDrawing, usePredictionOverlay,
+│   │                                    # useSensorMarkers, useSunSimulation, useCameraControls,
+│   │                                    # useFlyMode, useRoofFunctions
+│   └── services/
+│       ├── api.js                       # fetch wrapper with readable errors
+│       └── predictionApi.js             # /prediction endpoints
+├── nginx.conf.template                  # Gateway: SPA, tiles, basemap proxy, API allow-list
+├── vite.config.js                       # Dev server and proxies
+├── Dockerfile
+└── package.json
 ```
-
-## Key Components
-
-### CesiumViewer
-
-Initializes the CesiumJS Viewer with OSM base layer. Manages WMS imagery layers via `WebMapServiceImageryProvider` using WMS 1.3.0 with `CRS:84` (longitude-first axis order). Watches for layer visibility/opacity changes from parent state.
-
-### LayerControls
-
-Collapsible side panel with checkbox toggles per layer, range slider for opacity, and gradient legends for index layers (NDVI, NDWI, UHI, etc.).
-
-### PredictionPanel + SelectionOverlay
-
-Drawing interface for user-defined zones. Calls the zone prediction API with GeoJSON polygon + optional objects. Displays the returned RGBA PNG as a `SingleTileImageryProvider` overlay on the globe.
-
-### ZoneInfoPanel + ZoneObjectsPanel
-
-Zone metadata display (bounding box, pixel count, statistics). Drag-and-drop interface for placing urban objects (trees, buildings, solar panels, water fountains) and seeing their predicted impact on heat-risk.
-
-### Sensor Markers (useSensorMarkers.js)
-
-Periodically polls the `/sensors` endpoint and places markers on the globe for each active station. Displays temperature, humidity, wind data on click.
 
 ## Dependencies
 
-- **Vue 3** -- reactive UI framework
-- **CesiumJS 1.114.0** -- 3D globe rendering
-- **Vite** -- build tool
-- **vite-plugin-cesium** -- copies Cesium assets at build time
-- **Font Awesome 6.5.1** -- icons
+- **Vue 3**: reactive UI
+- **CesiumJS**: 3D globe
+- **Vite** with **vite-plugin-cesium**: build and dev server
+- **Font Awesome 6**: icons

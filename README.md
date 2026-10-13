@@ -1,539 +1,130 @@
-# Urban Heat Island (UHI) Monitoring Platform
+# UHI Viewer — lightweight version
 
-A FIWARE-based microservice platform for monitoring and predicting **Urban Heat Islands** in Brussels. The system ingests multi-source geospatial data, trains an XGBoost machine-learning model on 10+ raster layers, generates heat-risk predictions, ingests real-time sensor data, and serves everything through an interactive 3D web viewer.
+Interactive 3D viewer of the **Urban Heat Islands** of Brussels, built to be hosted on a small free server.
 
-Built on [FIWARE Orion-LD](https://github.com/FIWARE/context.Orion-LD) (NGSI-LD Context Broker) as the central data backbone — all services communicate through Orion entities and subscriptions in a fully **event-driven** architecture.
+Visitors can:
+- browse 11 map layers (UHI heatmap, NDVI, LST, orthophotos…);
+- draw a zone and simulate the effect of trees, buildings or fountains on the heat;
+- read live temperature sensors.
+
+This branch (`free_publication`) only contains what has to be online. The full FIWARE platform lives on the **`main`** branch. That is where the data is prepared, with Orion-LD, MongoDB, ingestion, GeoServer and model training.
 
 ---
 
 ## Architecture
 
-### Global Data Flow
-
-This diagram traces the complete journey of data from raw inputs to the browser:
-
-```mermaid
-flowchart LR
-    subgraph "Raw Inputs"
-        RGB[RGB Orthophoto<br/>6 GB GeoTIFF]
-        NIR[NIR Orthophoto<br/>4 GB GeoTIFF]
-        DTM_SRC[DTM Source]
-        BLDG[Buildings Data]
-        QGIS["QGIS Preprocessed<br/>albedo.tif | dsm.tif<br/>imperviousness.tif | ndbi.tif"]
-    end
-
-    subgraph "Ingestion Service :8001"
-        DL[Download & Extract]
-        OV1[Build Overviews]
-        NDVI_C[Compute NDVI]
-        NDWI_C[Compute NDWI]
-        LST_C[Compute LST]
-        BH[Building Height]
-        COG[Output as COG<br/>uint8 + DEFLATE]
-    end
-
-    subgraph "Orion-LD :1026"
-        E_LAYERS["GeoSpatialLayer x12<br/>(RGB, NIR, NDVI, NDWI,<br/>DTM, LST, BuildingHeight,<br/>DSM, Albedo, NDBI,<br/>Imperviousness ...)"]
-        E_UHI[UHIHeatMap]
-        E_SENSORS["TemperatureSensor<br/>(VLINDER + Sensors.community)"]
-    end
-
-    subgraph "Prediction Service :8002"
-        RESOLVE[Resolve layer paths<br/>from Orion entities]
-        TRAIN[Train XGBoost<br/>10 features + distance]
-        PREDICT[Generate UHI<br/>heat-risk raster]
-        ZONE[Zone Prediction<br/>+ object impacts]
-        SENSOR_SYNC[Sensor Ingestion<br/>periodic sync]
-    end
-
-    subgraph "GeoServer Sync"
-        PUB[Auto-publish layers<br/>via REST API]
-    end
-
-    subgraph GeoServer
-        WMS["WMS 1.3.0<br/>CRS:84"]
-    end
-
-    subgraph Frontend
-        CESIUM["CesiumJS Globe<br/>+ layer controls<br/>+ zone drawing<br/>+ sensor markers"]
-    end
-
-    RGB --> DL
-    NIR --> DL
-    DTM_SRC --> DL
-    BLDG --> DL
-    DL --> OV1
-    OV1 --> NDVI_C --> COG
-    OV1 --> NDWI_C --> COG
-    OV1 --> LST_C --> COG
-    OV1 --> BH --> COG
-    QGIS -- "copy to<br/>data/raw/" --> COG
-
-    COG --> E_LAYERS
-
-    E_LAYERS -- "subscription" --> RESOLVE
-    RESOLVE --> TRAIN
-    RESOLVE --> PREDICT
-    RESOLVE --> ZONE
-    PREDICT --> E_UHI
-
-    SENSOR_SYNC --> E_SENSORS
-
-    E_LAYERS -- "subscription" --> PUB
-    E_UHI -- "subscription" --> PUB
-    PUB --> WMS --> CESIUM
-    E_SENSORS --> CESIUM
+```
+Internet ─► Caddy (HTTPS) ─► frontend (nginx) ─┬─ /             → the site (Vue 3 + CesiumJS)
+                                               ├─ /tiles/       → data/tiles (static PNG map tiles)
+                                               ├─ /basemap/     → CARTO basemap (API key added by nginx)
+                                               └─ /prediction/  → prediction (FastAPI)
+                                                                    ├─ data/processed  (rasters, read-only)
+                                                                    ├─ data/models     (XGBoost model, read-only)
+                                                                    └─ VLINDER / Sensors.community (outbound)
 ```
 
-### Service Communication
+| Container | Role | Memory limit |
+|---|---|---|
+| `caddy` | HTTPS certificates and the only public entry point (ports 80/443) | 256 MB |
+| `frontend` | Serves the site and the tiles; gates the API (method allow-list, rate limits) | 256 MB |
+| `prediction` | Zone prediction, layer statistics, GeoTIFF download, live sensors | 4 GB |
 
-Orion-LD acts as the central message bus. Services register entities and subscribe to changes — no service calls another directly.
+### What moved where
 
-```mermaid
-graph TB
-    subgraph "Docker Compose Network"
-        MONGO[(MongoDB 5.0)]
-        ORION[Orion-LD<br/>Context Broker]
-        GS[GeoServer<br/>WMS Server]
+| Feature | Full platform (`main`) | Lightweight version (this branch) |
+|---|---|---|
+| Map layers | GeoServer renders each image on demand | Pre-rendered tiles served by nginx |
+| Sensors | Stored in Orion-LD / MongoDB | Kept in memory by `prediction`, `GET /sensors` |
+| Layer file paths | Resolved from Orion entities | Fixed in `services/prediction/algorithm/config.py` |
+| UHI legend range | Read from Orion | Constants in `services/frontend/src/App.js` |
+| Ingestion, training, full-map prediction | Online | Run on `main`, then publish the results here |
 
-        ING["Ingestion Service<br/>FastAPI :8001"]
-        PRED["Prediction Service<br/>FastAPI :8002"]
-        SYNC["GeoServer Sync<br/>FastAPI (internal)"]
-        FE["Frontend<br/>Vue + Cesium :3000"]
+---
 
-        VLINDER["VLINDER API<br/>(external)"]
-        SC["Sensors.community<br/>(external)"]
-    end
+## Data
 
-    MONGO --- ORION
+`data/` is not tracked by git. The server needs:
 
-    ING -- "1 create/update<br/>GeoSpatialLayer entities" --> ORION
-    ORION -- "2 subscription notification<br/>(layer changed)" --> PRED
-    PRED -- "3 query entity filePath" --> ORION
-    PRED -- "4 create/update<br/>UHIHeatMap entity" --> ORION
-    PRED -- "5 periodic sensor sync" --> ORION
-    ORION -- "6 subscription notification<br/>(publishToGeoserver=true)" --> SYNC
-    SYNC -- "7 REST API<br/>publish layer" --> GS
-    FE -- "WMS GetMap" --> GS
-    FE -- "proxy /prediction" --> PRED
-    FE -- "proxy /orion" --> ORION
+| Path | Content | Size |
+|---|---|---|
+| `data/processed/` | The 9 input layers and the UHI heatmap (see `LAYER_FILES` and `UHI_HEATMAP_FILE` in [config.py](services/prediction/algorithm/config.py)) | ≈ 3.8 GB |
+| `data/models/xgb_uhi_latest.joblib` | Trained XGBoost model | ≈ 3 MB |
+| `data/tiles/` | Map tiles produced by `scripts/export_tiles.py` | ≈ 8–12 GB |
 
-    VLINDER -.-> PRED
-    SC -.-> PRED
+The other files of `data/processed/` (`lst.tif`, `rgb_masked.tif`, `nir_masked.tif`, `uhi_prediction_brussels_2024.tif`) and all of `data/raw/` are not needed online. `prediction` refuses to start and lists the missing files if one of the required files is absent.
 
-    style ORION fill:#ff6b35,color:#fff,stroke:#ff6b35
-    style MONGO fill:#4db33d,color:#fff,stroke:#4db33d
-    style GS fill:#5b8c5a,color:#fff,stroke:#5b8c5a
-    style ING fill:#3498db,color:#fff,stroke:#3498db
-    style PRED fill:#9b59b6,color:#fff,stroke:#9b59b6
-    style SYNC fill:#e67e22,color:#fff,stroke:#e67e22
-    style FE fill:#2ecc71,color:#fff,stroke:#2ecc71
+---
+
+## Configuration
+
+Copy `.env.example` to `.env` and fill in:
+
+| Variable | Used by | Purpose |
+|---|---|---|
+| `VITE_CESIUM_ION_TOKEN` | frontend build | Cesium terrain and geocoder |
+| `CARTO_API_KEY` | nginx at runtime (Vite in dev) | Basemap key. It is added server-side and never reaches the browser |
+| `DOMAIN` | Caddy | Public domain name, e.g. `uhi.example.com` |
+| `TLS_EMAIL` | Caddy | Contact e-mail for Let's Encrypt |
+
+---
+
+## Run
+
+**Locally, production build** — the site is at http://127.0.0.1:3000:
+```bash
+docker compose -f docker-compose.yml -f docker-compose.dev.yml up -d --build prediction frontend
 ```
 
-### XGBoost Prediction Pipeline
+**Locally, with hot reload** — the containers above must be running. The site is at http://127.0.0.1:5173:
+```bash
+cd services/frontend
+npm install
+npm run dev
+```
 
-The ML model combines 8 raster features + 2 computed distance features to predict heat-risk intensity:
-
-```mermaid
-flowchart TB
-    subgraph "Input Rasters (8 layers)"
-        NDVI[NDVI]
-        NDWI[NDWI]
-        NDBI[NDBI]
-        DTM[DTM]
-        DSM[DSM]
-        BH[Building Height]
-        ALB[Albedo]
-        IMP[Imperviousness]
-    end
-
-    subgraph "Input Rasters for Loss function"
-        LST[LST]
-    end
-
-    subgraph "Distance Features"
-        DW[Distance to Water<br/>computed from NDWI]
-        DP[Distance to Park<br/>computed from NDVI]
-    end
-
-    subgraph "XGBoost Model"
-        FM["Feature Matrix<br/>10 features per pixel"]
-        XGB["XGBoost Predict<br/>tiled inference"]
-        OM["Objective Matrix<br/>Difference between LST_pixel and LST_ref"]
-    end
-
-    subgraph "Output"
-        UHI["UHI Heat-Risk Map"]
-        PNG["RGBA PNG overlay<br/>(zone prediction)"]
-        COG2["Cloud-Optimized GeoTIFF<br/>(full-extent prediction)"]
-    end
-
-    NDVI & NDWI & NDBI & DTM & DSM & BH & ALB & IMP --> FM
-    DW & DP --> FM
-    LST --> OM
-    OM --> XGB
-    FM --> XGB
-    XGB --> UHI
-    UHI --> PNG
-    UHI --> COG2
+**On the server** — Caddy obtains the HTTPS certificate for `DOMAIN`:
+```bash
+docker compose up -d --build
 ```
 
 ---
 
-## Project Structure
+## Updating the map tiles
 
-```
-uhi-fiware-poc/
-├── docker-compose.yml          # Orchestrates all 8 services (production posture)
-├── docker-compose.dev.yml      # Dev-only overlay: republishes ports on 127.0.0.1
-├── Caddyfile                   # Public reverse proxy (HTTPS, Let's Encrypt)
-├── .env.example                # Template for environment variables
-├── .env                        # Active config (git-ignored, copy from .env.example)
-│
-├── services/
-│   ├── ingestion/              # Downloads orthophotos, computes NDVI/NDWI/LST/BuildingHeight
-│   ├── prediction/             # XGBoost UHI prediction + sensor ingestion (VLINDER, Sensors.community)
-│   ├── geoserver-sync/         # Auto-publishes Orion entities to GeoServer as WMS layers
-│   └── frontend/               # Vue 3 + CesiumJS 3D web viewer
-│
-├── data/                       # Mounted volumes (git-ignored)
-│   ├── raw/                    # Downloaded orthophotos + QGIS preprocessed files
-│   ├── processed/              # COG outputs (NDVI, NDWI, LST, UHI, albedo, dsm, ...)
-│   ├── models/                 # Trained XGBoost model artifacts
-│   └── cache/                  # Intermediate processing cache
-│
-└── config/
-    └── geoserver/              # GeoServer workspace config (runtime, git-ignored)
-```
+The tiles are the exact images GeoServer renders on the full platform. To produce or refresh them:
 
-> Each service has its own detailed `README.md` with full file listings, API reference, and configuration.
+1. Start GeoServer from the full platform:
+   ```bash
+   git switch main
+   docker compose up -d geoserver
+   git switch free_publication
+   ```
+   The container keeps running after switching back.
+2. Export the tiles:
+   ```bash
+   python scripts/export_tiles.py                          # all layers, levels 10 to 16
+   python scripts/export_tiles.py --layers uhi_prediction  # a single layer
+   ```
+   - Expect about 0.45 s per tile, which is roughly 13 h for all 11 layers.
+   - The export is resumable: tiles already on disk are skipped. Delete a layer's folder to re-export it.
+3. Copy `data/tiles/` to the server.
+
+If you publish a new UHI heatmap or a new model, also update `UHI_MIN_CELSIUS` / `UHI_MAX_CELSIUS` in [App.js](services/frontend/src/App.js). They must match `uhi_min` / `uhi_max` of the model.
 
 ---
 
-## Quick Start
+## Security notes
 
-### Prerequisites
-
-| Requirement | Minimum | Recommended |
-|---|---|---|
-| [Docker](https://docs.docker.com/get-docker/) + [Docker Compose](https://docs.docker.com/compose/install/) | v2+ | Latest |
-| RAM | 8 GB | 16 GB |
-| Disk space | 15 GB | 30 GB |
-| OS | Windows 10/11, macOS, Linux | Any with Docker support |
-
-### Step 1 — Clone the repository
-
-```bash
-git clone <repo-url>
-cd uhi-fiware-poc
-```
-
-### Step 2 — Configure environment variables
-
-```bash
-cp .env.example .env
-```
-
-The default `.env` points to the Brussels 2024 UrbIS orthophotos. Edit if needed.
-
-### Step 3 — Place QGIS preprocessed raster files
-
-> **Important:** Four raster layers must be preprocessed externally with QGIS and placed manually in `data/raw/` **before** running the prediction. These files are provided separately.
-
-```bash
-mkdir -p data/raw
-```
-
-Copy the following files into `data/raw/`:
-
-| File | Description | Source |
-|---|---|---|
-| `albedo.tif` | Surface albedo (reflectivity) | Preprocessed in QGIS from satellite data |
-| `dsm.tif` | Digital Surface Model (elevation including buildings/trees) | Preprocessed in QGIS from LiDAR/Copernicus |
-| `imperviousness.tif` | Soil imperviousness index (0-100%) | Preprocessed in QGIS from Copernicus HRL |
-| `ndbi.tif` | Normalized Difference Built-up Index | Preprocessed in QGIS from satellite bands |
-
-These files must be **GeoTIFF format**, projected in **EPSG:31370** (Belgian Lambert 72), and cover the **Brussels Capital Region**. They are used as input features for the XGBoost UHI prediction model.
-
-### Step 4 — Start all services
-
-**Production** — nothing is exposed to the host except Caddy. Every service talks
-to its neighbours over the internal `uhi-network` bridge, and the only way in is
-HTTPS on `${DOMAIN}`:
-
-```bash
-docker compose up -d
-```
-
-**Local development** — the Vite dev server runs on your machine and needs to
-reach GeoServer, Orion and the prediction API. Add the dev overlay, which
-republishes those ports **bound to `127.0.0.1` only** (invisible from the LAN):
-
-```bash
-docker compose -f docker-compose.yml -f docker-compose.dev.yml up -d
-```
-
-This starts 8 containers:
-
-| Service | Container | Internal port | Host port (dev overlay only) | Description |
-|---|---|---|---|---|
-| MongoDB | `uhi-mongo` | 27017 | _(none)_ | Orion-LD database |
-| Orion-LD | `uhi-orion` | 1026 | `127.0.0.1:1026` | NGSI-LD Context Broker |
-| GeoServer | `uhi-geoserver` | 8080 | `127.0.0.1:8080` | WMS tile server |
-| Ingestion | `uhi-ingestion` | 8000 | `127.0.0.1:8001` | Data ingestion pipeline |
-| Prediction | `uhi-prediction` | 8000 | `127.0.0.1:8002` | UHI prediction engine + sensor sync |
-| GeoServer Sync | `uhi-geoserver-sync` | 8000 | _(none)_ | Auto-publishes layers to GeoServer |
-| Frontend | `uhi-frontend` | 80 | `127.0.0.1:3000` | CesiumJS 3D web viewer (nginx) |
-| Caddy | `uhi-caddy` | 80 / 443 | **`80`, `443`** | Public reverse proxy, HTTPS |
-
-> The `curl http://localhost:800x/...` commands in the steps below assume the dev
-> overlay is running. In production, reach the same endpoints from inside the
-> network, e.g. `docker compose exec prediction curl http://localhost:8000/status`.
-
-Verify all containers are healthy:
-
-```bash
-docker compose ps
-```
-
-Confirm production publishes nothing beyond Caddy:
-
-```bash
-docker compose config | grep published    # only 80 and 443
-```
-
-### Step 5 — Trigger the ingestion pipeline
-
-```bash
-curl -X POST http://localhost:8001/ingest/orthophotos \
-  -H "Content-Type: application/json" -d "{}"
-```
-
-Monitor progress:
-
-```bash
-curl http://localhost:8001/status
-```
-
-> **Warning: Ingestion takes a long time.**
-> The pipeline downloads ~10 GB of orthophotos and processes them into multiple spectral indices. Depending on your internet speed and hardware:
-> - **Download:** 15–60 minutes (skipped if files already exist)
-> - **Overview building:** 5–15 minutes per file
-> - **NDVI/NDWI/LST computation:** 10–30 minutes each (windowed processing on 4–6 GB files)
-> - **Total:** 1–3 hours on first run
-
-The pipeline will:
-1. Download RGB and NIR orthophotos, DTM, and Buildings data (~10 GB total)
-2. Build overviews on the raw files (for fast WMS serving)
-3. Compute NDVI, NDWI, and LST as Cloud-Optimized GeoTIFFs
-4. Compute Building Height from DSM and DTM
-5. Register all layers as NGSI-LD entities in Orion-LD
-
-This automatically triggers:
-- **GeoServer Sync** — publishes all layers to GeoServer as WMS
-
-### Step 6 — Train the XGBoost prediction model
-
-Once ingestion is complete **and** the 4 QGIS files are in place, train the model:
-
-```bash
-curl -X POST http://localhost:8002/training/start
-```
-
-Monitor training progress:
-
-```bash
-curl http://localhost:8002/training/status
-```
-
-> **Warning: Training can take 15–45 minutes** depending on your hardware (GPU recommended).
-> The model samples pixels across all 10+ input layers, builds a feature matrix, and trains an XGBoost regressor.
-### Step 7 — Generate the full UHI prediction
-
-Once the model is trained, trigger a full-extent prediction:
-
-```bash
-curl -X POST http://localhost:8002/predict/manual
-```
-
-> **Warning: Full-extent prediction takes 20–60 minutes.** It runs tiled XGBoost inference across the entire Brussels raster extent. Progress is tracked in the logs.
-
-This creates the `UHIHeatMap` entity in Orion, which automatically triggers GeoServer Sync to publish the prediction layer.
-
-### Step 8 — View the results
-
-- **Production:** open `https://${DOMAIN}` — Caddy terminates TLS and proxies to the frontend.
-- **Dev overlay:** open [http://localhost:3000](http://localhost:3000) for the production build served by nginx.
-- **Vite dev server:** `cd services/frontend && npm run dev`, then [http://localhost:5173](http://localhost:5173).
-  The dev overlay must be running, since Vite proxies `/geoserver`, `/orion` and
-  `/prediction` to those `127.0.0.1` ports.
-
-The CesiumJS 3D viewer provides:
-- Toggle-able WMS layers (RGB, NIR, NDVI, NDWI, LST, UHI Prediction, ...)
-- Per-layer opacity sliders
-- Pixel click to query values across all layers
-- Polygon drawing for zone-specific predictions
-- Object impact simulation (trees, buildings, solar panels, ...)
-- Real-time sensor markers (VLINDER + Sensors.community)
-- Sun position simulation
-- Free-flight mode: fly over the city with the arrow keys, steer with the mouse
+- Only Caddy publishes ports. `prediction` is reachable only through the nginx allow-list in [nginx.conf.template](services/frontend/nginx.conf.template): 5 routes, fixed HTTP methods, rate limits.
+- Layer names are checked against a fixed list, so no file path ever comes from a request.
+- Data volumes are mounted read-only.
+- The CARTO key lives only in the server's `.env`. Browsers request `/basemap/z/x/y.png`, and nginx adds the key and verifies CARTO's certificate.
+- [SECURITY_AUDIT.md](SECURITY_AUDIT.md) is the audit of the full platform and is kept for reference.
 
 ---
 
-## Complete Workflow Diagram
+## Services
 
-```mermaid
-sequenceDiagram
-    participant U as User
-    participant ING as Ingestion :8001
-    participant ORION as Orion-LD :1026
-    participant PRED as Prediction :8002
-    participant SYNC as GeoServer Sync
-    participant GS as GeoServer :8080
-    participant FE as Frontend :3000
-
-    Note over U: 1. Place QGIS files in data/raw/
-    Note over U: albedo.tif, dsm.tif, imperviousness.tif, ndbi.tif
-
-    U->>ING: POST /ingest/orthophotos
-    activate ING
-    Note over ING: Download RGB + NIR + DTM + Buildings<br/>(15-60 min)
-    Note over ING: Compute NDVI, NDWI, LST<br/>(10-30 min each)
-    ING->>ORION: Create GeoSpatialLayer entities (x11)
-    deactivate ING
-
-    ORION-->>SYNC: Subscription notification
-    SYNC->>GS: Publish WMS layers
-
-    U->>PRED: POST /training/start
-    activate PRED
-    PRED->>ORION: Query all layer file paths
-    Note over PRED: Sample pixels, build feature matrix<br/>Train XGBoost (15-45 min)
-    PRED->>ORION: Publish model metadata
-    deactivate PRED
-
-    U->>PRED: POST /predict/manual
-    activate PRED
-    PRED->>ORION: Resolve 10+ layer paths
-    Note over PRED: Tiled XGBoost inference<br/>(20-60 min)
-    PRED->>ORION: Create UHIHeatMap entity
-    deactivate PRED
-
-    ORION-->>SYNC: Subscription notification
-    SYNC->>GS: Publish UHI prediction layer
-
-    Note over PRED: Background: periodic sensor sync
-    PRED->>ORION: Upsert TemperatureSensor entities
-
-    U->>FE: Open https://${DOMAIN}
-    FE->>GS: WMS GetMap (all layers)
-    FE->>PRED: GET /sensors (live markers)
-    Note over FE: Interactive 3D globe with<br/>all layers + sensor data
-```
-
----
-
-## NGSI-LD Data Model
-
-### GeoSpatialLayer
-
-Represents a geospatial raster layer:
-
-| Property | Type | Example |
-|---|---|---|
-| `id` | string | `urn:ngsi-ld:GeoSpatialLayer:NDVI:brussels:2024` |
-| `type` | string | `GeoSpatialLayer` |
-| `layerType` | Property | `RGB`, `NIR`, `NDVI`, `NDWI`, `DTM`, `LST`, `BuildingHeight`, `DSM`, `Albedo`, `NDBI`, `Imperviousness` |
-| `name` | Property | Human-readable name |
-| `filePath` | Property | Container-internal path to GeoTIFF |
-| `geoserverLayer` | Property | GeoServer layer name (e.g. `uhi:ndvi`) |
-| `publishToGeoserver` | Property | `true` if the layer should be served via WMS |
-| `boundingBox` | GeoProperty | WGS84 bounding polygon |
-| `resolution` | Property | Spatial resolution in cm |
-
-### UHIHeatMap
-
-Represents a heat-risk prediction output:
-
-| Property | Type | Example |
-|---|---|---|
-| `id` | string | `urn:ngsi-ld:UHIHeatMap:brussels:2024` |
-| `type` | string | `UHIHeatMap` |
-| `modelVersion` | Property | `xgb_v1` |
-| `inputLayers` | Property | Array of input entity IDs |
-| `filePath` | Property | Path to prediction GeoTIFF |
-| `valueRange` | Property | `{min: 0, max: 1}` (0 = cool, 1 = hot) |
-
-### TemperatureSensor
-
-Represents a real-time sensor observation:
-
-| Property | Type | Example |
-|---|---|---|
-| `id` | string | `urn:ngsi-ld:TemperatureSensor:vlinder:ukkel_kmi` |
-| `type` | string | `TemperatureSensor` |
-| `provider` | Property | `vlinder`, `sensors_community` |
-| `temperature` | Property | `22.5` (with `observedAt`) |
-| `humidity` | Property | `65.0` (with `observedAt`) |
-| `location` | GeoProperty | Point with WGS84 coordinates |
-
----
-
-## API Reference
-
-### Ingestion Service (`:8001`)
-
-| Method | Endpoint | Description |
-|---|---|---|
-| `POST` | `/ingest/orthophotos` | Start ingestion pipeline |
-| `GET` | `/status` | Current pipeline status |
-| `GET` | `/layers` | List registered layers from Orion |
-| `GET` | `/health` | Health check |
-
-### Prediction Service (`:8002`)
-
-| Method | Endpoint | Description |
-|---|---|---|
-| `POST` | `/predict` | Orion subscription callback (auto) |
-| `POST` | `/predict/manual` | Manual full-extent prediction trigger |
-| `POST` | `/training/start` | Start XGBoost model training |
-| `GET` | `/training/status` | Training progress |
-| `POST` | `/zones/predict` | Zone prediction (GeoJSON polygon + objects) |
-| `POST` | `/zones/stats` | Zone statistics (mean/min/max per layer) |
-| `GET` | `/zones/pixel?lon=X&lat=Y` | Single pixel value lookup |
-| `POST` | `/zones/export` | Export zone as GeoTIFF |
-| `GET` | `/sensors` | List latest sensor readings |
-| `POST` | `/sensors/sync` | Manual sensor sync trigger |
-| `GET` | `/vlinder/tbase` | Temperature baseline (rural reference) |
-| `GET` | `/health` | Health check |
-
-### GeoServer Sync (internal)
-
-| Method | Endpoint | Description |
-|---|---|---|
-| `POST` | `/sync` | Orion notification handler |
-| `POST` | `/sync/all` | Force full re-sync |
-| `GET` | `/health` | Health check |
-
----
-
-## Technology Stack
-
-| Component | Technology | Role |
-|---|---|---|
-| Context Broker | [FIWARE Orion-LD](https://github.com/FIWARE/context.Orion-LD) 1.6.0 | NGSI-LD entity & subscription management |
-| Database | MongoDB 5.0 | Orion-LD persistence |
-| GIS Server | GeoServer 2.24.2 | WMS layer serving |
-| Ingestion | Python 3.11 / FastAPI | Data download & raster processing |
-| Prediction | Python 3.11 / FastAPI / XGBoost | ML-based UHI prediction + sensor ingestion |
-| GeoServer Sync | Python 3.11 / FastAPI | Automated GeoServer configuration |
-| Frontend | Vue 3 / CesiumJS 1.114.0 | Interactive 3D globe viewer |
-| Base Map | OpenStreetMap | Base layer tiles |
-| Raster Processing | Rasterio / NumPy / SciPy | GeoTIFF I/O & computation |
-| ML Engine | XGBoost / scikit-learn | Heat-risk model training & inference |
-
----
-
-## License
-
-This project is developed by [FARI -- AI for the Common Good Institute](https://fari.brussels).
+- [services/frontend](services/frontend/README.md) — Vue 3 + CesiumJS viewer, nginx gateway
+- [services/prediction](services/prediction/README.md) — FastAPI zone prediction and sensors
+- [scripts/export_tiles.py](scripts/export_tiles.py) — GeoServer → static tiles
